@@ -1,0 +1,13 @@
+{% extends "_base.html" %}
+{% block title %}New order uploaded{% endblock %}
+{% block content %}
+<p style="margin:0 0 4px;color:#15803d;font-weight:600;text-transform:uppercase;font-size:12px;letter-spacing:.05em;">New order uploaded</p>
+<h1 style="margin:0 0 16px;font-size:20px;">{{ title }}</h1>
+<table role="presentation" cellpadding="0" cellspacing="0" style="font-size:15px;">
+<tr><td style="padding:4px 12px 4px 0;color:#7b8794;">Order date</td><td style="padding:4px 0;font-weight:600;">{{ order.date or "—" }}</td></tr>
+{% if order.description %}<tr><td style="padding:4px 12px 4px 0;color:#7b8794;">Type</td><td style="padding:4px 0;">{{ order.description }}</td></tr>{% endif %}
+<tr><td style="padding:4px 12px 4px 0;color:#7b8794;">CNR</td><td style="padding:4px 0;font-family:monospace;">{{ case.cnr_number }}</td></tr>
+</table>
+{% if order.link %}<p style="margin:16px 0 0;"><a href="{{ order.link }}" style="color:#1d3557;font-weight:600;">Download order (PDF)</a></p>{% endif %}
+{% include "_case_links.html" %}
+{% endblock %}

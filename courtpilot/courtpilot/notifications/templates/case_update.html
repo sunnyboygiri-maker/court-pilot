@@ -1,0 +1,11 @@
+{% extends "_base.html" %}
+{% block title %}Case update{% endblock %}
+{% block content %}
+<p style="margin:0 0 4px;color:#1d4ed8;font-weight:600;text-transform:uppercase;font-size:12px;letter-spacing:.05em;">Case update</p>
+<h1 style="margin:0 0 16px;font-size:20px;">{{ title }}</h1>
+<ul style="margin:0;padding-left:20px;">
+{% for line in changes %}<li style="margin:4px 0;">{{ line }}</li>{% endfor %}
+</ul>
+<p style="margin:12px 0 0;color:#7b8794;font-family:monospace;">CNR {{ case.cnr_number }}</p>
+{% include "_case_links.html" %}
+{% endblock %}

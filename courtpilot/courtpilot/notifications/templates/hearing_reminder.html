@@ -1,0 +1,15 @@
+{% extends "_base.html" %}
+{% block title %}Hearing {{ when }}{% endblock %}
+{% block content %}
+<p style="margin:0 0 4px;color:#c2410c;font-weight:600;text-transform:uppercase;font-size:12px;letter-spacing:.05em;">Hearing {{ when }}</p>
+<h1 style="margin:0 0 16px;font-size:20px;">{{ title }}</h1>
+<table role="presentation" cellpadding="0" cellspacing="0" style="font-size:15px;">
+<tr><td style="padding:4px 12px 4px 0;color:#7b8794;">Date</td><td style="padding:4px 0;font-weight:600;">{{ fmt_date(case.next_hearing_date) }}</td></tr>
+<tr><td style="padding:4px 12px 4px 0;color:#7b8794;">Court</td><td style="padding:4px 0;">{{ case.court_name or "—" }}</td></tr>
+{% if case.judge %}<tr><td style="padding:4px 12px 4px 0;color:#7b8794;">Judge</td><td style="padding:4px 0;">{{ case.judge }}</td></tr>{% endif %}
+{% if case.stage %}<tr><td style="padding:4px 12px 4px 0;color:#7b8794;">Stage</td><td style="padding:4px 0;">{{ case.stage }}</td></tr>{% endif %}
+<tr><td style="padding:4px 12px 4px 0;color:#7b8794;">CNR</td><td style="padding:4px 0;font-family:monospace;">{{ case.cnr_number }}</td></tr>
+{% if tracked and tracked.client_name %}<tr><td style="padding:4px 12px 4px 0;color:#7b8794;">Client</td><td style="padding:4px 0;">{{ tracked.client_name }}</td></tr>{% endif %}
+</table>
+{% include "_case_links.html" %}
+{% endblock %}
