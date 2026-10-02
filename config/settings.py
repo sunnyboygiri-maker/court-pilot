@@ -72,6 +72,10 @@ class Settings(BaseSettings):
     ECOURTS_MIN_REPOLL_HOURS: int = 4
     # The mobile-API fallback endpoint is unverified; keep it off unless confirmed
     ECOURTS_MOBILE_API_FALLBACK: bool = False
+    # eCourts blocks many data-centre IPs ("405 Security Page"). Route its
+    # traffic, and only its traffic, through this proxy, e.g.
+    # http://user:pass@in.proxy.example:8000 (see scraper/proxy.py)
+    ECOURTS_PROXY_URL: str = ""
     # "Find a case" searches run in the `searcher` Celery worker; true runs them
     # inside the API process instead (local preview / tests without Celery)
     SEARCH_INLINE: bool = False

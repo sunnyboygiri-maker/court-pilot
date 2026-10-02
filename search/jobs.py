@@ -32,7 +32,7 @@ from search.ecourts import Court, DistrictSearch, Hit, SearchUnavailable
 logger = logging.getLogger("courtpilot.search.jobs")
 
 KINDS = ("name", "number", "fir", "advocate")
-MAX_QUERIES = 60          # per search; about 2-4 minutes of eCourts time
+MAX_QUERIES = 80          # eCourts requests per search; a few minutes at the shared rate limit
 CONCURRENCY = 3           # parallel eCourts queries per search
 MIN_SCORE = 0.5           # name matches below this are noise
 RESULT_CACHE_TTL = 6 * 3600
@@ -47,36 +47,51 @@ def _court(d: dict) -> Court:
     return Court(d["state_code"], d["dist_code"], d["complex_value"], d.get("name", ""))
 
 
+def _sections(courts: list[dict]) -> list[tuple[dict, str]]:
+    """
+    (court, establishment) pairs. Some complexes (e.g. Dwarka, Delhi) are split
+    into several establishments that eCourts only searches one at a time, so
+    each is its own query: honest progress, and one failing doesn't sink the rest.
+    """
+    return [(c, est) for c in courts for est in _court(c).establishments]
+
+
 def plan_queries(kind: str, params: dict) -> list[dict]:
-    """Each item is one eCourts query: {"op": ..., "court": {...}, ...}."""
+    """Each item is one eCourts request: {"op": ..., "court": {...}, "est": ..., ...}."""
     courts = params.get("courts") or []
     if not courts:
         raise PlanError("Please choose at least one court.")
+    sections = _sections(courts)
     if kind == "name":
         stems = params.get("stems") or names.search_stems(params["name"])
         if not stems:
             raise PlanError("Please type a name with at least 3 letters.")
         years = list(range(int(params["year_from"]), int(params["year_to"]) + 1))
-        if len(courts) * len(years) > MAX_QUERIES:
+        if len(sections) * len(years) > MAX_QUERIES:
+            fit = max(1, MAX_QUERIES // len(sections))
+            split = next((c for c in courts if len(_court(c).establishments) > 1), None)
+            why = (f" {split.get('name', 'One court')} is split into {len(_court(split).establishments)} sections "
+                   f"on eCourts, and each is searched separately.") if split else ""
             raise PlanError(
-                f"That's {len(courts) * len(years)} court-years to search. Please choose fewer years or courts "
-                f"(up to {MAX_QUERIES})."
+                f"That's too big a search for eCourts.{why} Please search up to {fit} year{'s' if fit != 1 else ''} "
+                f"at a time, or fewer courts."
             )
         # Drop the rarer spellings first if the full plan is too big
-        while len(stems) > 1 and len(courts) * len(years) * len(stems) > MAX_QUERIES:
+        while len(stems) > 1 and len(sections) * len(years) * len(stems) > MAX_QUERIES:
             stems = stems[:-1]
         params["stems"] = stems
-        return [{"op": "party", "court": c, "name": s, "year": y} for c in courts for y in reversed(years) for s in stems]
+        return [{"op": "party", "court": c, "est": e, "name": s, "year": y}
+                for y in reversed(years) for c, e in sections for s in stems]
     if kind == "number":
         return [{"op": "number", "court": courts[0], "case_type": params["case_type"],
                  "number": params["number"], "year": int(params["year"])}]
     if kind == "fir":
-        return [{"op": "fir", "court": c, "police_station": params["police_station"],
-                 "fir_no": params["fir_no"], "year": int(params["year"])} for c in courts]
+        return [{"op": "fir", "court": c, "est": e, "police_station": params["police_station"],
+                 "fir_no": params["fir_no"], "year": int(params["year"])} for c, e in sections]
     if kind == "advocate":
-        return [{"op": "advocate", "court": c, "name": params.get("advocate_name", ""),
+        return [{"op": "advocate", "court": c, "est": e, "name": params.get("advocate_name", ""),
                  "bar_state": params.get("bar_state", ""), "bar_code": params.get("bar_code", ""),
-                 "bar_year": params.get("bar_year", ""), "status": params.get("status", "Pending")} for c in courts]
+                 "bar_year": params.get("bar_year", ""), "status": params.get("status", "Pending")} for c, e in sections]
     raise PlanError("Unknown search")
 
 
@@ -94,15 +109,16 @@ async def create_job(db: AsyncSession, user: User, kind: str, params: dict) -> S
 async def _run_query(engine: DistrictSearch, q: dict) -> list[Hit]:
     court = _court(q["court"])
     op = q["op"]
+    est = q.get("est")
     if op == "party":
-        return await engine.party(court, q["name"], q["year"])
+        return await engine.party(court, q["name"], q["year"], est=est)
     if op == "number":
         return await engine.case_number(court, q["case_type"], q["number"], q["year"])
     if op == "fir":
-        return await engine.fir(court, q["police_station"], q["fir_no"], q["year"])
+        return await engine.fir(court, q["police_station"], q["fir_no"], q["year"], est=est)
     if op == "advocate":
         return await engine.advocate(court, name=q["name"], bar_state=q["bar_state"], bar_code=q["bar_code"],
-                                     bar_year=q["bar_year"], status=q["status"])
+                                     bar_year=q["bar_year"], status=q["status"], est=est)
     raise ValueError(op)
 
 
@@ -227,7 +243,13 @@ async def run_job(job_id: int, session_factory: Callable, redis, engine: Optiona
         await asyncio.gather(*(one(q) for q in queries))
         job.status = "failed" if queries and job.failed == len(queries) else "done"
         if job.status == "failed":
-            job.error = "eCourts isn't responding right now. Please try again in a few minutes."
+            if any("405" in e or "Security Page" in e for e in errors):
+                # eCourts' firewall refused the server itself (see scraper/proxy.py)
+                logger.error("eCourts is blocking this server (405 Security Page); set ECOURTS_PROXY_URL")
+                job.error = ("eCourts is refusing connections from CourtPilot at the moment. We're on it; "
+                             "please try again later.")
+            else:
+                job.error = "eCourts isn't responding right now. Please try again in a few minutes."
         job.finished_at = utcnow()
         await db.commit()
 

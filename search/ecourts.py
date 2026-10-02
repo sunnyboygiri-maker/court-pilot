@@ -21,6 +21,10 @@ from bharat_courts.districtcourts.parser import parse_option_tags
 
 logger = logging.getLogger("courtpilot.search.ecourts")
 
+from scraper.proxy import install as _install_proxy  # noqa: E402
+
+_install_proxy()
+
 CNR_IN_TEXT = re.compile(r"'([A-Z]{4}[0-9A-Z]{12})'")
 CASE_NO_RE = re.compile(r"^[^/]+/\d+/\d{4}$")
 FIR_RE = re.compile(r"^\d+/\d{4}$")
@@ -160,9 +164,9 @@ class DistrictSearch:
 
     # --- Searches ---
 
-    async def party(self, court: Court, name: str, year: int, status: str = "Both") -> list[Hit]:
+    async def party(self, court: Court, name: str, year: int, status: str = "Both", est: Optional[str] = None) -> list[Hit]:
         out: list[Hit] = []
-        for est in court.establishments:
+        for est in ([est] if est is not None else court.establishments):
             out += await self._post(court, "casestatus/submitPartyName", est, lambda cap: {
                 "petres_name": name, "rgyearP": str(year), "case_status": status, "fcaptcha_code": cap,
                 **self._base(court, est),
@@ -176,10 +180,11 @@ class DistrictSearch:
             "case_captcha_code": cap, **self._base(court, est),
         }, "case_data")
 
-    async def fir(self, court: Court, police_station: str, fir_no: str, year: int, status: str = "Both") -> list[Hit]:
+    async def fir(self, court: Court, police_station: str, fir_no: str, year: int, status: str = "Both",
+                  est: Optional[str] = None) -> list[Hit]:
         code, _, uniform = police_station.partition("-")
         out: list[Hit] = []
-        for est in court.establishments:
+        for est in ([est] if est is not None else court.establishments):
             out += await self._post(court, "casestatus/submitFirNo", est, lambda cap: {
                 "police_st_code": code, "uniform_code": uniform, "fir_no": fir_no, "firyear": str(year),
                 "case_status": status, "fir_captcha_code": cap, **self._base(court, est),
@@ -187,10 +192,10 @@ class DistrictSearch:
         return out
 
     async def advocate(self, court: Court, *, name: str = "", bar_state: str = "", bar_code: str = "",
-                       bar_year: str = "", status: str = "Pending") -> list[Hit]:
+                       bar_year: str = "", status: str = "Pending", est: Optional[str] = None) -> list[Hit]:
         by_bar = bool(bar_code)
         out: list[Hit] = []
-        for est in court.establishments:
+        for est in ([est] if est is not None else court.establishments):
             out += await self._post(court, "casestatus/submitAdvName", est, lambda cap: {
                 "radAdvt": "2" if by_bar else "1", "advocate_name": "" if by_bar else name,
                 "adv_bar_state": bar_state, "adv_bar_code": bar_code, "adv_bar_year": bar_year,

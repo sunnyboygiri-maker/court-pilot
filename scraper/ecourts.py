@@ -12,7 +12,12 @@ from typing import Optional
 import httpx
 from tenacity import retry, retry_if_not_exception_type, stop_after_attempt, wait_exponential
 
+from scraper.proxy import install as _install_proxy, proxy_for_httpx
+
 logger = logging.getLogger("courtpilot.scraper")
+
+# CNR lookups and polling go through ECOURTS_PROXY_URL when it's set
+_install_proxy()
 
 
 class CaseNotFoundError(ValueError):
@@ -67,6 +72,7 @@ class ECourtsScraper:
                 timeout=30.0,
                 headers=self.MOBILE_HEADERS,
                 follow_redirects=True,
+                **proxy_for_httpx(),
             )
         return self._client
 

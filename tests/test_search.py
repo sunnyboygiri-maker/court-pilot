@@ -87,6 +87,14 @@ def test_name_plan_spans_courts_years_and_spellings():
     assert queries[0]["year"] == 2021  # newest first
 
 
+def test_split_courts_are_searched_section_by_section():
+    dwarka = {"state_code": "26", "dist_code": "6", "complex_value": "1260006@1,2,3,5,6@Y", "name": "Dwarka Court Complex"}
+    queries = jobs.plan_queries("name", {"name": "Virendra Maurya", "courts": [dwarka], "year_from": 2021, "year_to": 2021})
+    assert {q["est"] for q in queries} == {"1", "2", "3", "5", "6"}
+    with pytest.raises(jobs.PlanError, match="split into 5 sections"):
+        jobs.plan_queries("name", {"name": "Virendra", "courts": [dwarka], "year_from": 2000, "year_to": 2025})
+
+
 def test_oversized_plan_is_trimmed_then_refused():
     many = [dict(DHORAJI, complex_value=f"{i}@1@N") for i in range(10)]
     params = {"name": "Jitender", "courts": many, "year_from": 2020, "year_to": 2025}
@@ -103,7 +111,7 @@ class FakeEngine:
         self.calls = []
         self.fail = False
 
-    async def party(self, court, name, year, status="Both"):
+    async def party(self, court, name, year, status="Both", est=None):
         self.calls.append(("party", name, year))
         if self.fail:
             raise SearchUnavailable("captcha")
@@ -118,11 +126,11 @@ class FakeEngine:
         self.calls.append(("number", case_type, number, year))
         return [Hit("DLWE010004122024", f"CS/{number}/{year}", "CS", year, "A", "B")]
 
-    async def fir(self, court, police_station, fir_no, year, status="Both"):
+    async def fir(self, court, police_station, fir_no, year, status="Both", est=None):
         self.calls.append(("fir", police_station, fir_no, year))
         return [Hit("DLWE010007072019", "CC/707/2019", "CC", 2019, "STATE", "ACCUSED", fir=f"{fir_no}/{year}")]
 
-    async def advocate(self, court, *, name="", bar_state="", bar_code="", bar_year="", status="Pending"):
+    async def advocate(self, court, *, name="", bar_state="", bar_code="", bar_year="", status="Pending", est=None):
         self.calls.append(("advocate", name or bar_code))
         return [Hit(f"DLWE0100{i:04d}2023", f"CS/{i}/2023", "CS", 2023, f"CLIENT {i}", "OTHER") for i in range(1, 8)]
 
