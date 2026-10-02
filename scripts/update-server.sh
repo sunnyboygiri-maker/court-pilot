@@ -33,6 +33,14 @@ fi
 cp "$ENV_FILE" "$BACKUP_DIR/env"
 echo "settings file: $ENV_FILE"
 PG=$(docker ps --format '{{.Names}}' | grep -E 'postgres' | head -1 || true)
+# Reuse the running app's compose project name: it decides which data volume
+# (i.e. which database) the restarted app uses
+PROJECT=courtpilot
+if [ -n "$PG" ]; then
+  PROJECT=$(docker inspect -f '{{ index .Config.Labels "com.docker.compose.project" }}' "$PG" 2>/dev/null || echo courtpilot)
+  [ -n "$PROJECT" ] || PROJECT=courtpilot
+fi
+echo "compose project: $PROJECT"
 if [ -n "$PG" ]; then
   docker exec "$PG" pg_dump -U courtpilot courtpilot > "$BACKUP_DIR/courtpilot.sql"
   echo "database: $(du -h "$BACKUP_DIR/courtpilot.sql" | cut -f1) from container $PG"
@@ -82,7 +90,7 @@ METHODS=()
 if [ ${#METHODS[@]} -eq 0 ]; then
   warn "No login method is configured: nobody will be able to log in."
   warn "Add TELEGRAM_BOT_TOKEN or SMTP_USER/SMTP_PASSWORD to $APP_DIR/.env, then run:"
-  warn "  cd $APP_DIR && docker compose --profile polling up -d"
+  warn "  cd $APP_DIR && docker compose -p $PROJECT --profile polling up -d"
 else
   echo "Login methods: ${METHODS[*]}"
 fi
@@ -91,19 +99,19 @@ say "5/5 Rebuilding and restarting (a few minutes the first time)"
 PROFILE=()
 # Without a public https webhook, the bot must poll Telegram itself
 [ -z "$(getv TELEGRAM_WEBHOOK_URL)" ] && [ -n "$(getv TELEGRAM_BOT_TOKEN)" ] && PROFILE=(--profile polling)
-docker compose "${PROFILE[@]}" up -d --build --remove-orphans
+docker compose -p "$PROJECT" "${PROFILE[@]}" up -d --build --remove-orphans
 
 printf 'Waiting for the site'
 for _ in $(seq 1 40); do
   if curl -fs localhost:8000/health >/dev/null 2>&1; then
     printf '\n'
     say "Done. Open $(getv APP_BASE_URL) on your phone."
-    docker compose "${PROFILE[@]}" ps --format 'table {{.Service}}\t{{.Status}}'
+    docker compose -p "$PROJECT" "${PROFILE[@]}" ps --format 'table {{.Service}}\t{{.Status}}'
     exit 0
   fi
   printf '.'; sleep 3
 done
 printf '\n'
 warn "The site didn't come up. Last log lines from the app:"
-docker compose logs --tail 40 api
+docker compose -p "$PROJECT" logs --tail 40 api
 die "Send the output above to Claude. Your backup is in $BACKUP_DIR"
