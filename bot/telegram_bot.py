@@ -380,6 +380,27 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await _reply(update, HELP_TEXT)
 
 
+async def text_fallback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Plain messages used to be ignored silently; always answer with the next step."""
+    text = (update.effective_message.text or "").strip()
+    async with SessionLocal() as db:
+        user = await get_linked_user(db, update.effective_chat.id)
+    if user is None:
+        await update.effective_message.reply_text(
+            "To link your account, tap the 📱 Share my phone number button below. "
+            "Please don't type the number: the button lets Telegram confirm it's yours.\n\n"
+            "Don't see the button? Tap the keyboard icon next to the message box, "
+            "or open this chat in the Telegram app on your phone.",
+            reply_markup=_share_phone_keyboard(),
+        )
+        return
+    cnr = normalize_cnr(text)
+    if cnr:
+        await update.effective_message.reply_text(f"To track this case, send:\n/track {cnr}")
+        return
+    await _reply(update, HELP_TEXT)
+
+
 async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     logger.error("Bot handler error", exc_info=context.error)
     if isinstance(update, Update) and update.effective_message:
@@ -409,6 +430,7 @@ def build_application(token: Optional[str] = None) -> Application:
     application.add_handler(CommandHandler("upcoming", upcoming))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(MessageHandler(filters.CONTACT, contact_received))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_fallback))
     application.add_handler(CallbackQueryHandler(case_button, pattern=r"^case:\d+$"))
     application.add_error_handler(on_error)
     return application

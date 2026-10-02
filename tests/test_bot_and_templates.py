@@ -98,8 +98,8 @@ async def test_email_content_renders_and_escapes(tracked_case):
 
 # --- Bot handlers ---
 
-def make_update(chat_id=555, user_id=42, contact=None, args=None):
-    message = SimpleNamespace(reply_text=AsyncMock(), contact=contact)
+def make_update(chat_id=555, user_id=42, contact=None, args=None, text=None):
+    message = SimpleNamespace(reply_text=AsyncMock(), contact=contact, text=text)
     update = SimpleNamespace(
         effective_chat=SimpleNamespace(id=chat_id),
         effective_user=SimpleNamespace(id=user_id, username="advtest", full_name="Adv Test"),
@@ -189,6 +189,20 @@ async def test_contact_share_adds_phone_to_connected_google_account(db, make_use
     await db.refresh(web_user)
     assert web_user.phone == "+919812345678"
     assert len((await db.scalars(select(User))).all()) == 1  # no second account
+
+
+async def test_typed_number_gets_share_button_not_silence():
+    update, ctx = make_update(text="9876543210")
+    await tb.text_fallback(update, ctx)
+    assert "Share my phone number" in replies(update)[0]
+    assert update.effective_message.reply_text.call_args.kwargs["reply_markup"] is not None
+
+
+async def test_linked_user_typing_a_cnr_is_shown_track_command(make_user):
+    await make_user(telegram_chat_id="555")
+    update, ctx = make_update(text="dlhc0105 8248 2024")
+    await tb.text_fallback(update, ctx)
+    assert "/track DLHC010582482024" in replies(update)[0]
 
 
 async def test_unlinked_user_prompted_to_link():
