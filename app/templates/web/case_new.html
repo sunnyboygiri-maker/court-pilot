@@ -93,6 +93,27 @@
     </div>
   </form>
 
+{% elif by == "screenshot" %}
+  <form method="post" action="/find/screenshot" enctype="multipart/form-data" hx-encoding="multipart/form-data"
+        hx-disabled-elt="find button[type=submit]" hx-disinherit="hx-disabled-elt">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <p class="lead-in">Send a screenshot or photo that shows the case. We read the court, case number and parties, find the exact case on eCourts and you add it in one tap.</p>
+    <label class="upload">
+      <input type="file" name="images" accept="image/*" multiple required>
+      <span class="upload-box">{{ icon("plus") }}<b>Choose screenshots or take a photo</b><small>Up to 10 at once</small></span>
+    </label>
+    <div class="shot-tips">
+      <b>Works best with</b>
+      <ul>
+        <li>The <b>eCourts app's "My Cases"</b> screen, with the grey court name visible at the top</li>
+        <li>Case status pages, cause lists and orders that show a CNR or case number</li>
+      </ul>
+      <small>Clear screenshots work better than photos of paper. Images are read on our own server and deleted after reading.</small>
+    </div>
+    <button class="btn block" type="submit" style="margin-top:16px">{{ icon("search") }}Find these cases</button>
+    <p class="hint" style="text-align:center">You can also send screenshots to the CourtPilot bot on Telegram.</p>
+  </form>
+
 {% elif by == "name" %}
   <form method="post" action="/find" hx-disabled-elt="find button[type=submit]" hx-disinherit="hx-disabled-elt">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

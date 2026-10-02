@@ -121,6 +121,9 @@ templates in `app/templates/web/`, styles in `app/static/`.
   case number, FIR, or "My cases" (imports an advocate's cases from eCourts). Searches
   run in the background with live progress; results are ranked and added with one tap.
   Courts are saved per lawyer in "My courts" (Settings).
+- **Screenshots**: send a screenshot (e.g. the eCourts app's My Cases screen) to the
+  Telegram bot or upload it on Add case → Screenshot; free on-server OCR reads the court,
+  case number and parties, finds the exact case and offers one-tap Add.
 - **Session**: httpOnly cookie (Secure on HTTPS, SameSite=Lax), 30 days. API bearer
   tokens and web cookies are not interchangeable. Every form carries a CSRF token.
 - The web routes are mounted before the API, so `/cases/new` isn't read as
@@ -145,7 +148,8 @@ registers the webhook on startup and verifies Telegram's secret-token header.
 - Put payment in front of `POST /users/me/plan/upgrade`. It is disabled unless
   `ALLOW_PLAN_SELF_UPGRADE=true`, and the web app shows "Coming soon".
 - Register the WhatsApp templates listed in `notifications/whatsapp.py` with Meta.
-- Confirm the eCourts CNR lookup works from your server's network (the portals block some hosting IPs).
+- eCourts' district portal blocks many data-centre networks (Hostinger included): set
+  `ECOURTS_PROXY_URL` to an Indian static/sticky residential proxy.
 
 ## Tests
 

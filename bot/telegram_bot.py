@@ -60,6 +60,8 @@ HELP_TEXT = (
     "/case `<CNR>` — details of one case\n"
     "/upcoming — hearings in the next 7 days\n"
     "/help — this message\n\n"
+    "📷 *No CNR?* Send a screenshot of the case, e\\.g\\. the eCourts app's My Cases screen, "
+    "and we'll find it and offer to add it\\.\n\n"
     "You'll get a weekly digest, reminders 3, 2 and 1 day before each hearing, "
     "and alerts when a new order is uploaded\\."
 )
@@ -380,6 +382,80 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await _reply(update, HELP_TEXT)
 
 
+# --- Screenshots: read the case off the image and offer to add it ---
+
+MAX_IMAGES_PER_DAY = 30
+
+
+async def photo_received(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    from app.redis import get_redis
+    from models.database import UserCourt
+    from search import jobs
+
+    message = update.effective_message
+    async with SessionLocal() as db:
+        user = await _require_user(update, db)
+        if not user:
+            return
+        redis = get_redis()
+        used = await redis.incr(f"img-count:{user.id}")
+        if used == 1:
+            await redis.expire(f"img-count:{user.id}", 24 * 3600)
+        if used > MAX_IMAGES_PER_DAY:
+            await message.reply_text("That's the screenshot limit for today. Please try again tomorrow.")
+            return
+        if message.photo:
+            media = message.photo[-1]  # largest size
+        elif message.document and (message.document.mime_type or "").startswith("image/"):
+            media = message.document
+        else:
+            return
+        if (media.file_size or 0) > jobs.MAX_IMAGE_BYTES:
+            await message.reply_text("That image is too large. Please send a screenshot instead.")
+            return
+        data = bytes(await (await media.get_file()).download_as_bytearray())
+        key = await jobs.store_image_async(redis, data)
+        courts = (await db.scalars(select(UserCourt).where(UserCourt.user_id == user.id))).all()
+        job = await jobs.create_job(db, user, "screenshot", {
+            "images": [key], "courts": jobs.serialize_courts(courts), "telegram_chat_id": str(update.effective_chat.id),
+        })
+    jobs.start_job(job.id)
+    await message.reply_text("📷 Got it. Reading the case details and looking them up on eCourts… "
+                             "This usually takes under a minute.")
+
+
+async def add_from_screenshot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    from models.database import SearchHit, SearchJob
+    from search.add import add_hits, fetch_details
+
+    query = update.callback_query
+    await query.answer()
+    _, job_id, which = query.data.split(":")
+    async with SessionLocal() as db:
+        user = await _require_user(update, db)
+        if not user:
+            return
+        job = await db.get(SearchJob, int(job_id))
+        if job is None or job.user_id != user.id:
+            return
+        q = select(SearchHit).where(SearchHit.job_id == job.id)
+        if which != "all":
+            q = q.where(SearchHit.id == int(which))
+        hits = list((await db.scalars(q)).all())
+        result = await add_hits(db, user, hits)
+    fetch_details(result.new_case_ids)
+    parts = []
+    if result.added:
+        labels = ", ".join(h.case_number or h.cnr_number for h in hits if h.cnr_number)[:300]
+        parts.append(f"✅ Added {len(result.added)} case{'s' if len(result.added) != 1 else ''}: {labels}. "
+                     "You'll get reminders before every hearing.")
+    if result.already:
+        parts.append(f"{len(result.already)} already in your list.")
+    if result.over_limit:
+        parts.append(f"{result.over_limit} not added: your plan's case limit is full.")
+    await update.effective_message.reply_text(" ".join(parts) or "Nothing to add.")
+
+
 async def text_fallback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Plain messages used to be ignored silently; always answer with the next step."""
     text = (update.effective_message.text or "").strip()
@@ -430,6 +506,8 @@ def build_application(token: Optional[str] = None) -> Application:
     application.add_handler(CommandHandler("upcoming", upcoming))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(MessageHandler(filters.CONTACT, contact_received))
+    application.add_handler(MessageHandler(filters.PHOTO | filters.Document.IMAGE, photo_received))
+    application.add_handler(CallbackQueryHandler(add_from_screenshot, pattern=r"^fa:\d+:(\d+|all)$"))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_fallback))
     application.add_handler(CallbackQueryHandler(case_button, pattern=r"^case:\d+$"))
     application.add_error_handler(on_error)

@@ -15,6 +15,9 @@ bharat-courts[ocr]==0.5.0
 httpx==0.28.1
 beautifulsoup4==4.12.3
 
+# Reading case details from screenshots: free, open source, runs on our server
+rapidocr==3.9.2
+
 # Task queue
 celery==5.4.0
 redis==5.1.1

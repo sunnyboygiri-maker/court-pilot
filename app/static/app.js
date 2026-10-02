@@ -84,3 +84,13 @@ document.addEventListener("change", function (e) {
     document.querySelectorAll(".hit-check").forEach(function (c) { c.checked = e.target.checked; });
   }
 });
+
+// Show which screenshots were picked
+document.addEventListener("change", function (e) {
+  if (e.target.matches(".upload input[type=file]")) {
+    var box = e.target.parentElement.querySelector(".upload-box b");
+    var n = e.target.files.length;
+    if (box) box.textContent = n ? n + " image" + (n > 1 ? "s" : "") + " chosen" : "Choose screenshots or take a photo";
+    e.target.parentElement.querySelector(".upload-box").classList.toggle("has-files", n > 0);
+  }
+});

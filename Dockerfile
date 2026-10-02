@@ -6,15 +6,18 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     TZ=Asia/Kolkata
 
-# libgomp1: onnxruntime (CAPTCHA OCR via ddddocr)
+# libgomp1: onnxruntime (CAPTCHA OCR via ddddocr, screenshot OCR via rapidocr)
+# libgl1, libglib2.0-0: OpenCV, which rapidocr pulls in
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libgomp1 tzdata \
+    && apt-get install -y --no-install-recommends libgomp1 libgl1 libglib2.0-0 tzdata \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install -r requirements.txt
+# The OCR check makes the build fail here, not a lawyer's upload later
+RUN pip install -r requirements.txt \
+    && python -c "from rapidocr import RapidOCR; RapidOCR()"
 
 COPY . .
 

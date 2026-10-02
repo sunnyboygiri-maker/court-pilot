@@ -55,6 +55,24 @@
     <div class="alert warn">{{ icon("alert") }}<span>eCourts didn't answer for {{ job.failed }} of {{ job.total }} searches, so a few results may be missing. Running the search again usually fills them in.</span></div>
   {% endif %}
 
+  {% if job.kind == "screenshot" and read and not running %}
+    {% set missing = read | rejectattr("found") | list %}
+    {% if missing %}
+      <section class="card read-summary">
+        <h2>Couldn't find {{ missing|length }} of {{ read|length }}</h2>
+        <ul class="rows">
+          {% for r in missing %}
+            <li><div class="what"><b>{{ ((r.case_type ~ " " ~ r.number ~ "/" ~ r.year) if r.number else "A case") }}</b>
+              <span>{{ r.petitioner }}{% if r.respondent %} vs {{ r.respondent }}{% endif %} ·
+                {% if not r.court_header %}court name not visible on the screenshot{% else %}not found in {{ r.court_header }}{% endif %}</span></div>
+              {% if r.number %}<a class="btn secondary" href="/cases/new?by=number">Search</a>{% endif %}</li>
+          {% endfor %}
+        </ul>
+        <p class="hint" style="margin-bottom:0">Tip: include the grey court name at the top of the eCourts app screen, or search by case number.</p>
+      </section>
+    {% endif %}
+  {% endif %}
+
   {% if hits %}
     {% if not running and hits|length > 1 %}
       <form id="bulk" method="post" action="/find/{{ job.id }}/add" class="bulk-bar">

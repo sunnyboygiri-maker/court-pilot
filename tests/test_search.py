@@ -89,7 +89,7 @@ def test_name_plan_spans_courts_years_and_spellings():
 
 def test_split_courts_are_searched_section_by_section():
     dwarka = {"state_code": "26", "dist_code": "6", "complex_value": "1260006@1,2,3,5,6@Y", "name": "Dwarka Court Complex"}
-    queries = jobs.plan_queries("name", {"name": "Virendra Maurya", "courts": [dwarka], "year_from": 2021, "year_to": 2021})
+    queries = jobs.plan_queries("name", {"name": "Virendra Mehta", "courts": [dwarka], "year_from": 2021, "year_to": 2021})
     assert {q["est"] for q in queries} == {"1", "2", "3", "5", "6"}
     with pytest.raises(jobs.PlanError, match="split into 5 sections"):
         jobs.plan_queries("name", {"name": "Virendra", "courts": [dwarka], "year_from": 2000, "year_to": 2025})

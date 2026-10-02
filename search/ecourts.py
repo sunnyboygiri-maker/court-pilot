@@ -218,10 +218,18 @@ class DistrictSearch:
         async with self._client_factory() as c:
             return await c.list_complexes(state_code, dist_code)
 
-    async def case_types(self, court: Court) -> dict[str, str]:
+    async def case_types(self, court: Court, est: Optional[str] = None) -> dict[str, str]:
+        """{"21^2": "Cr. Case - CRIMINAL CASE", ...}; the code carries its establishment after "^"."""
         async with self._client_factory() as c:
             return await c.list_case_types(court.state_code, court.dist_code, court.complex_code,
-                                           court.establishments[0])
+                                           court.establishments[0] if est is None else est)
+
+    async def establishments(self, court: Court) -> dict[str, str]:
+        """Sections of a split complex: {"2": "Chief Metropolitan Magistrate, West, THC", ...}."""
+        if court.establishments == [""]:
+            return {"": court.name}
+        async with self._client_factory() as c:
+            return await c.list_establishments(court.state_code, court.dist_code, court.complex_code)
 
     async def police_stations(self, court: Court) -> dict[str, str]:
         """{"20501-11213010": "DHORAJI POLICE STATION - RAJKOT DISTRICT 20501", ...} (state-wide)."""

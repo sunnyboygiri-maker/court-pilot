@@ -510,3 +510,17 @@ ul.hits { list-style: none; margin: 0; padding: 0; }
 /* Advocate search: show only the field for the chosen way */
 form:has(.adv-by input[value=name]:checked) .adv-bar,
 form:has(.adv-by input[value=bar]:checked) .adv-name { display: none; }
+
+/* Screenshot upload */
+.upload { display: block; position: relative; }
+.upload input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
+.upload-box { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; min-height: 140px;
+  border: 2px dashed var(--line); border-radius: var(--radius); background: var(--surface-2); color: var(--brand); text-align: center; padding: 16px; }
+.upload-box svg { width: 30px; height: 30px; }
+.upload-box small { color: var(--muted); }
+.upload:focus-within .upload-box { border-color: var(--focus); }
+.upload-box.has-files { border-style: solid; border-color: var(--brand); background: var(--brand-soft); }
+.shot-tips { margin-top: 14px; font-size: .92rem; color: var(--muted); }
+.shot-tips b { color: var(--text); }
+.shot-tips ul { margin: 6px 0 8px; padding-left: 20px; }
+.read-summary { margin-top: 12px; }

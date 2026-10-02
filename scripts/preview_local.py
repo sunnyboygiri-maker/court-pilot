@@ -48,9 +48,11 @@ import fakeredis.aioredis  # noqa: E402
 import app.redis as app_redis  # noqa: E402
 import workers.redis_client as worker_redis  # noqa: E402
 
-_fake = fakeredis.aioredis.FakeRedis(decode_responses=True)
+# One in-memory Redis shared by the web app and the inline searcher (like the real one)
+_server = fakeredis.FakeServer()
+_fake = fakeredis.aioredis.FakeRedis(server=_server, decode_responses=True)
 app_redis.get_redis = lambda: _fake
-_fake_sync = fakeredis.FakeRedis(decode_responses=True)
+_fake_sync = fakeredis.FakeRedis(server=_server, decode_responses=True)
 worker_redis.get_sync_redis = lambda: _fake_sync
 
 from sqlalchemy import create_engine, select  # noqa: E402

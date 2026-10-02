@@ -48,16 +48,17 @@ async def _call(method: str, payload: dict, retries: int = 2) -> DeliveryResult:
     return DeliveryResult(False, "Telegram request failed")
 
 
-async def send_telegram_message(chat_id: str, text: str, parse_mode: str = "MarkdownV2") -> DeliveryResult:
-    return await _call(
-        "sendMessage",
-        {
-            "chat_id": chat_id,
-            "text": text,
-            "parse_mode": parse_mode,
-            "link_preview_options": {"is_disabled": True},
-        },
-    )
+async def send_telegram_message(chat_id: str, text: str, parse_mode: str = "MarkdownV2",
+                                reply_markup: dict | None = None) -> DeliveryResult:
+    payload = {
+        "chat_id": chat_id,
+        "text": text,
+        "parse_mode": parse_mode,
+        "link_preview_options": {"is_disabled": True},
+    }
+    if reply_markup:
+        payload["reply_markup"] = reply_markup
+    return await _call("sendMessage", payload)
 
 
 async def send_telegram_document(

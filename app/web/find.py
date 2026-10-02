@@ -10,7 +10,7 @@ import logging
 import re
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Form, Query, Request
+from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse
 from redis.asyncio import Redis
 from sqlalchemy import select
@@ -31,7 +31,9 @@ logger = logging.getLogger("courtpilot.web.find")
 
 router = APIRouter(include_in_schema=False)
 
-TABS = [("cnr", "CNR"), ("name", "Party name"), ("number", "Case number"), ("fir", "FIR"), ("advocate", "My cases")]
+TABS = [("cnr", "CNR"), ("screenshot", "Screenshot"), ("name", "Party name"), ("number", "Case number"),
+        ("fir", "FIR"), ("advocate", "My cases")]
+MAX_UPLOADS = 10
 DROPDOWN_TTL = 7 * 24 * 3600
 BAR_RE = re.compile(r"^\s*([A-Za-z]{1,4})\s*/\s*(\d{1,6})\s*/\s*(\d{4})\s*$")
 
@@ -201,9 +203,21 @@ async def case_type_options(court_ids: list[str] = Query(default=[]), user: User
     uc = await _user_court(db, user, court_ids[0] if court_ids else "")
     if uc is None:
         return options_html({}, "Choose a court first")
+    court = court_of(uc)
+
+    async def fetch():
+        if court.establishments == [""]:
+            return await engine.case_types(court)
+        # A split complex (e.g. Tis Hazari): each section has its own case types
+        sections = await engine.establishments(court)
+        out = {}
+        for est, est_name in sections.items():
+            for code, label in (await engine.case_types(court, est)).items():
+                out[code] = f"{label} · {est_name}"
+        return out
+
     try:
-        data = await cached(redis, f"dc:casetypes:{uc.state_code}:{uc.dist_code}:{uc.complex_value}",
-                            lambda: engine.case_types(court_of(uc)))
+        data = await cached(redis, f"dc:casetypes-all:{uc.state_code}:{uc.dist_code}:{uc.complex_value}", fetch)
     except Exception:
         logger.exception("case types")
         return options_html({}, "eCourts isn't responding. Try again")
@@ -278,7 +292,7 @@ async def start_search(
         elif not 1950 <= year <= this_year:
             error = "Please enter the year the case was registered."
         else:
-            types = await redis.get(f"dc:casetypes:{picked[0].state_code}:{picked[0].dist_code}:{picked[0].complex_value}") if picked else None
+            types = await redis.get(f"dc:casetypes-all:{picked[0].state_code}:{picked[0].dist_code}:{picked[0].complex_value}") if picked else None
             params["case_type_name"] = (json.loads(types).get(case_type, "") if types else "").title()
         params["courts"] = params["courts"][:1]
     elif kind == "fir":
@@ -321,6 +335,39 @@ async def start_search(
     return redirect(request, f"/find/{job.id}")
 
 
+@router.post("/find/screenshot", dependencies=[Depends(verify_csrf)])
+async def start_screenshot_search(
+    request: Request,
+    images: list[UploadFile] = File(default=[]),
+    user: User = Depends(get_web_user),
+    db: AsyncSession = Depends(get_db),
+    redis: Redis = Depends(get_redis),
+):
+    keys, error = [], None
+    files = [f for f in images if f.filename]
+    if not files:
+        error = "Please choose a screenshot or photo of the case."
+    elif len(files) > MAX_UPLOADS:
+        error = f"Please send up to {MAX_UPLOADS} images at a time."
+    for f in files if not error else []:
+        data = await f.read()
+        if not (f.content_type or "").startswith("image/"):
+            error = f"{f.filename} isn't an image. Please send screenshots or photos."
+            break
+        if len(data) > jobs.MAX_IMAGE_BYTES:
+            error = f"{f.filename} is too large (max 10 MB)."
+            break
+        keys.append(await jobs.store_image_async(redis, data))
+    if error:
+        ctx = await hub_context(db, user, "screenshot", error=error)
+        return render(request, "web/case_new.html", ctx)
+    job = await jobs.create_job(db, user, "screenshot", {
+        "images": keys, "courts": jobs.serialize_courts(await my_courts(db, user)),
+    })
+    jobs.start_job(job.id)
+    return redirect(request, f"/find/{job.id}")
+
+
 # --- Results ---
 
 async def _job_for(db: AsyncSession, user: User, job_id: int) -> Optional[SearchJob]:
@@ -351,7 +398,10 @@ async def results_page(request: Request, job_id: int, user: User = Depends(get_w
     running = job.status in ("queued", "running")
     ctx.update(
         job=job, running=running, hits=hits, tracked=tracked,
-        title=jobs.describe(job), courts_label=jobs.court_label(job.params.get("courts", [])),
+        title=jobs.describe(job),
+        courts_label=("Read from your screenshot, then looked up on eCourts" if job.kind == "screenshot"
+                      else jobs.court_label(job.params.get("courts", []))),
+        read=job.params.get("read") or [],
         strong=[h for h in hits if h.score >= 0.88], other=[h for h in hits if h.score < 0.88],
         label=match_label, pct=int(100 * job.done / job.total) if job.total else 0,
         slots_left=max(0, service.case_limit(user) - await service.count_tracked(db, user.id)),

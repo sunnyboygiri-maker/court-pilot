@@ -22,6 +22,7 @@ from typing import Any, Callable, Optional
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import flag_modified
 
 from config.settings import settings
 from config.timeutils import today_ist, utcnow
@@ -59,7 +60,10 @@ def _sections(courts: list[dict]) -> list[tuple[dict, str]]:
 def plan_queries(kind: str, params: dict) -> list[dict]:
     """Each item is one eCourts request: {"op": ..., "court": {...}, "est": ..., ...}."""
     courts = params.get("courts") or []
-    if not courts:
+    if kind == "screenshot":
+        if not params.get("images"):
+            raise PlanError("Please choose a screenshot or photo.")
+    elif not courts:
         raise PlanError("Please choose at least one court.")
     sections = _sections(courts)
     if kind == "name":
@@ -88,6 +92,8 @@ def plan_queries(kind: str, params: dict) -> list[dict]:
     if kind == "fir":
         return [{"op": "fir", "court": c, "est": e, "police_station": params["police_station"],
                  "fir_no": params["fir_no"], "year": int(params["year"])} for c, e in sections]
+    if kind == "screenshot":
+        return [{"op": "image", "key": k} for k in params.get("images", [])]
     if kind == "advocate":
         return [{"op": "advocate", "court": c, "est": e, "name": params.get("advocate_name", ""),
                  "bar_state": params.get("bar_state", ""), "bar_code": params.get("bar_code", ""),
@@ -138,6 +144,8 @@ async def _wait_for_slot(redis) -> None:
 
 
 def score_hit(kind: str, params: dict, hit: Hit) -> float:
+    if kind == "screenshot":
+        return float(hit.extra.get("score", 1.0))
     if kind != "name":
         return 1.0
     query = params["name"]
@@ -156,7 +164,7 @@ async def _save(db: AsyncSession, job: SearchJob, court: dict, hits: list[Hit], 
     if not hits:
         return
     now = utcnow()
-    if source == "ecourts":
+    if source == "ecourts" and court:
         rows = [{
             "cnr_number": h.cnr_number, "case_type": h.case_type or None, "case_number": h.case_number or None,
             "reg_year": h.reg_year, "petitioner": h.petitioner or None, "respondent": h.respondent or None,
@@ -207,6 +215,9 @@ async def run_job(job_id: int, session_factory: Callable, redis, engine: Optiona
     async with session_factory() as db:
         job = await db.get(SearchJob, job_id)
         if job is None or job.status not in ("queued", "running"):
+            return
+        if job.kind == "screenshot":
+            await run_screenshot_job(db, job, redis, engine)
             return
         queries = plan_queries(job.kind, dict(job.params))
         job.status, job.total = "running", len(queries)
@@ -290,6 +301,9 @@ def describe(job: SearchJob) -> str:
         return f"{p.get('case_type_name') or 'Case'} {p['number']}/{p['year']}"
     if job.kind == "fir":
         return f"FIR {p['fir_no']}/{p['year']}, {p.get('police_station_name') or 'police station'}"
+    if job.kind == "screenshot":
+        n = len(p.get("read") or p.get("images") or [])
+        return "Cases from your screenshot" + ("s" if n > 1 else "")
     who = p.get("advocate_name") or "/".join(x for x in (p.get("bar_state"), p.get("bar_code"), p.get("bar_year")) if x)
     return f"Cases of {who}"
 
@@ -310,3 +324,144 @@ def serialize_courts(rows: list[Any]) -> list[dict]:
 def court_name(r: Any) -> str:
     """"Dhoraji, Rajkot" rather than "Dhoraji, Rajkot, Rajkot" when the complex already names its district."""
     return r.complex_name if r.dist_name.lower() in r.complex_name.lower() else f"{r.complex_name}, {r.dist_name}"
+
+
+# --- Screenshots ---
+
+IMAGE_TTL = 3600  # images are only kept until the search has read them
+MAX_IMAGE_BYTES = 10 * 1024 * 1024
+
+
+def image_key() -> str:
+    import secrets
+
+    return secrets.token_urlsafe(12)
+
+
+def store_image(redis, data: bytes) -> str:
+    """Keep an uploaded image (sync Redis) until the searcher reads it; returns its key."""
+    import base64
+
+    key = image_key()
+    redis.set(f"img:{key}", base64.b64encode(data).decode(), ex=IMAGE_TTL)
+    return key
+
+
+async def store_image_async(redis, data: bytes) -> str:
+    import base64
+
+    key = image_key()
+    await redis.set(f"img:{key}", base64.b64encode(data).decode(), ex=IMAGE_TTL)
+    return key
+
+
+MAX_STATES = 3
+LOOKUP_TIMEOUT = 300       # seconds for one screenshot case
+SCREENSHOT_BUDGET = 900    # seconds for a whole screenshot search
+
+
+async def _lawyer_places(db: AsyncSession, job: SearchJob, redis, engine: DistrictSearch):
+    """
+    Where this lawyer practises: (states, [(state, district)]), most used first.
+    From their saved courts, then the cases they track. Keeps lookups to a
+    few districts instead of whole states.
+    """
+    from collections import Counter
+
+    from models.database import CourtCase, TrackedCase
+
+    places = [(c["state_code"], c["dist_code"]) for c in job.params.get("courts", [])]
+    rows = (await db.execute(select(CourtCase.state, CourtCase.district).join(TrackedCase).where(
+        TrackedCase.user_id == job.user_id, CourtCase.state.isnot(None)))).all()
+    if rows:
+        cached = redis.get("dc:states")
+        all_states = json.loads(cached) if cached else await engine.states()
+        if not cached and all_states:
+            redis.set("dc:states", json.dumps(all_states), ex=7 * 24 * 3600)
+        by_name = {v.lower(): k for k, v in (all_states or {}).items()}
+        for (state, district), _ in Counter((r.state, r.district) for r in rows).most_common():
+            code = by_name.get((state or "").lower())
+            if code:
+                places.append((code, district) if district else (code, ""))
+    states = list(dict.fromkeys(p[0] for p in places))[:MAX_STATES]
+    places = [p for p in dict.fromkeys(places) if p[0] in states and p[1]]
+    return states, places
+
+
+async def run_screenshot_job(db: AsyncSession, job: SearchJob, redis, engine: DistrictSearch) -> None:
+    import base64
+
+    from search.resolve import parties_score, resolve
+    from search.screenshot import read_image
+
+    params = dict(job.params)
+    job.status = "running"
+    await db.commit()
+
+    reads = []
+    for key in params.get("images", []):
+        raw = redis.get(f"img:{key}")
+        redis.delete(f"img:{key}")
+        if not raw:
+            continue
+        try:
+            reads += await asyncio.to_thread(read_image, base64.b64decode(raw))
+        except Exception:
+            logger.exception("Couldn't read an image")
+    seen, unique = set(), []
+    for r in reads:
+        k = r.cnr or (r.case_type.lower(), r.number, r.year)
+        if k not in seen:
+            seen.add(k)
+            unique.append(r)
+    params["read"] = [dict(r.to_dict(), found=[]) for r in unique]
+    params.pop("images", None)
+    job.params, job.total, job.done = params, max(1, len(unique)), 0
+    await db.commit()
+    if not unique:
+        job.status, job.finished_at = "failed", utcnow()
+        job.error = ("We couldn't read any case details from that image. Send a clear screenshot of the case "
+                     "(the eCourts app's My Cases screen works best), or search by name or case number.")
+        await db.commit()
+        await _notify_telegram(db, job)
+        return
+
+    states, places = await _lawyer_places(db, job, redis, engine)
+    started = asyncio.get_running_loop().time()
+    for i, read in enumerate(unique):
+        hits, section = [], None
+        if asyncio.get_running_loop().time() - started > SCREENSHOT_BUDGET:
+            job.failed += 1  # out of time: report what's found so far
+        else:
+            try:
+                await _wait_for_slot(redis)
+                hits, section = await asyncio.wait_for(
+                    resolve(engine, redis, read, states, params.get("courts", []), places), LOOKUP_TIMEOUT)
+            except Exception as e:
+                logger.warning("Screenshot case lookup failed: %s", e)
+                job.failed += 1
+        for h in hits:
+            h.extra["score"] = parties_score(read, h) or 1.0
+        await _save(db, job, section["court"] if section else {}, hits, source="ecourts" if section else "screenshot")
+        params["read"][i]["found"] = [h.cnr_number for h in hits]
+        job.params = dict(params)
+        flag_modified(job, "params")  # the change is inside a nested list
+        job.done += 1
+        await db.commit()
+    job.status, job.finished_at = "done", utcnow()
+    await db.commit()
+    await _notify_telegram(db, job)
+
+
+async def _notify_telegram(db: AsyncSession, job: SearchJob) -> None:
+    """Screenshots sent on Telegram get their answer there, with Add buttons."""
+    chat_id = job.params.get("telegram_chat_id")
+    if not chat_id:
+        return
+    from search.telegram_reply import send_results
+
+    hits = (await db.scalars(select(SearchHit).where(SearchHit.job_id == job.id).order_by(SearchHit.id))).all()
+    try:
+        await send_results(chat_id, job, list(hits))
+    except Exception:
+        logger.exception("Couldn't send screenshot results to Telegram")
