@@ -1,0 +1,65 @@
+{% extends "web/base.html" %}
+{% from "web/_icons.html" import icon %}
+{% block title %}Add case{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Add a case</h1>
+  <p>{{ cases_used }} of {{ case_limit }} cases used on your {{ plan_name }} plan.</p>
+</div>
+
+<section class="card">
+  <form method="post" action="/cases/new" data-long-request hx-disabled-elt="find button[type=submit]">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+    <div class="progress" role="status" aria-live="polite">
+      <div class="spinner"></div>
+      <h3>Finding your case on eCourts</h3>
+      <p data-progress-msg>This can take up to a minute. Please keep this page open.</p>
+      <div class="bar"><i></i></div>
+    </div>
+
+    <div class="form-body">
+      {% if error %}
+        <div class="alert error" role="alert">{{ icon("alert") }}
+          <span>{{ error }}{% if error_link %} <a href="{{ error_link[0] }}">{{ error_link[1] }}</a>{% endif %}</span>
+        </div>
+      {% endif %}
+
+      <label class="field">
+        <span>CNR number</span>
+        <input class="input-big" type="text" name="cnr" value="{{ form.cnr or '' }}" required
+               minlength="16" maxlength="25" placeholder="DLHC010582482024"
+               autocomplete="off" autocapitalize="characters" spellcheck="false" {% if not error %}autofocus{% endif %}>
+        <small>16 letters and numbers, e.g. <span class="cnr-sample">DLHC010582482024</span></small>
+      </label>
+      <details class="where-cnr">
+        <summary>Where do I find the CNR number?</summary>
+        <ol>
+          <li>It's printed at the top of the case status page on eCourts (services.ecourts.gov.in), labelled <b>CNR Number</b>.</li>
+          <li>It also appears on cause lists and on the first page of court orders.</li>
+          <li>The first 4 letters are the court code, e.g. <b>DLHC</b> for Delhi High Court.</li>
+        </ol>
+      </details>
+
+      <p class="optional-head">Optional, for your reference</p>
+      <div class="row-2">
+        <label class="field">
+          <span>Label</span>
+          <input type="text" name="label" value="{{ form.label or '' }}" maxlength="255" placeholder="e.g. Sharma recovery suit">
+        </label>
+        <label class="field">
+          <span>Client name</span>
+          <input type="text" name="client_name" value="{{ form.client_name or '' }}" maxlength="255" placeholder="e.g. Sharma Textiles">
+        </label>
+      </div>
+      <label class="field">
+        <span>Notes</span>
+        <textarea name="notes" rows="3" placeholder="Anything you want to remember about this case">{{ form.notes or '' }}</textarea>
+      </label>
+
+      <button class="btn block" type="submit" style="margin-top:20px">{{ icon("plus") }}Add case</button>
+      <p class="hint" style="text-align:center">Only you can see your label, client name and notes.</p>
+    </div>
+  </form>
+</section>
+{% endblock %}

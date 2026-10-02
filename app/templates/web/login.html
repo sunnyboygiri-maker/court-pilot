@@ -1,0 +1,119 @@
+{% from "web/_icons.html" import icon %}<!doctype html>
+<html lang="en-IN">
+<head>
+{% include "web/_head.html" %}
+<title>Log in · {{ app_name }}</title>
+</head>
+<body hx-boost="true">
+{% if flash %}<div class="toast" role="status">{{ icon("check-circle") }}<span>{{ flash }}</span></div>{% endif %}
+{% macro google_button() -%}
+  <a class="btn block google" href="/login/google" hx-boost="false">
+    <svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+    Continue with Google
+  </a>
+{%- endmacro %}
+<main class="auth">
+  <div class="logo">{{ icon("logo") }}{{ app_name }}</div>
+  <p class="tagline">Hearing reminders days in advance, for every case you track on eCourts.</p>
+
+  <section class="card">
+  {% if step == "start" %}
+    <h1>Log in or sign up</h1>
+    <p class="lead">New here? We'll create your account.</p>
+    {% if error %}<div class="alert error" role="alert">{{ icon("alert") }}<span>{{ error }}</span></div>{% endif %}
+    {% if google_enabled %}{{ google_button() }}{% endif %}
+    {% if email_enabled %}<a class="btn block secondary" href="/login?method=email">{{ icon("mail") }}Continue with email</a>{% endif %}
+    {% if google_enabled or email_enabled %}<div class="or"><span>or use your mobile number</span></div>{% endif %}
+    <form method="post" action="/login/send" hx-disabled-elt="find button">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label class="field">
+        <span class="sr-only">Mobile number</span>
+        <div class="prefix-input">
+          <span class="prefix">+91</span>
+          <input type="tel" name="phone" value="{{ phone or '' }}" inputmode="numeric" autocomplete="tel-national"
+                 placeholder="98765 43210" maxlength="16" required aria-label="Mobile number">
+        </div>
+      </label>
+      <button class="btn block" type="submit">Continue {{ icon("send") }}</button>
+    </form>
+
+  {% elif step == "email" %}
+    <h1>Continue with email</h1>
+    <p class="lead">We'll email you a 6-digit code. No password needed.</p>
+    {% if error %}<div class="alert error" role="alert">{{ icon("alert") }}<span>{{ error }}</span></div>{% endif %}
+    <form method="post" action="/login/email/send" hx-disabled-elt="find button">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label class="field">
+        <span>Email address</span>
+        <input type="email" name="email" value="{{ email or '' }}" autocomplete="email" inputmode="email"
+               placeholder="you@example.com" maxlength="255" required autofocus>
+      </label>
+      <button class="btn block" type="submit">Email me a code {{ icon("send") }}</button>
+    </form>
+    <p class="resend"><a href="/login">Other ways to log in</a></p>
+
+  {% elif step == "telegram" %}
+    <h1>One more step for phone login</h1>
+    <p class="lead">Text-message codes are coming soon. For now, phone codes arrive on Telegram, which is free. Set it up once:</p>
+    <ol class="steps">
+      <li>Open {% if bot_username %}<b>@{{ bot_username }}</b>{% else %}our CourtPilot bot{% endif %} in Telegram and tap <b>Start</b>.</li>
+      <li>Tap <b>Share my phone number</b>, using <b>+91 {{ display_phone }}</b>.</li>
+      <li>Come back here and tap <b>Send code</b>.</li>
+    </ol>
+    {% if bot_username %}
+      <a class="btn block secondary" href="https://t.me/{{ bot_username }}?start=web" target="_blank" rel="noopener" hx-boost="false">Open Telegram {{ icon("external") }}</a>
+    {% endif %}
+    <form method="post" action="/login/send" hx-disabled-elt="find button">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="phone" value="{{ phone }}">
+      <button class="btn block" type="submit">Send code {{ icon("send") }}</button>
+    </form>
+    {% if google_enabled or email_enabled %}
+      <div class="or"><span>or skip this</span></div>
+      {% if google_enabled %}{{ google_button() }}{% endif %}
+      {% if email_enabled %}<a class="btn block secondary" href="/login?method=email">{{ icon("mail") }}Continue with email</a>{% endif %}
+    {% endif %}
+    <p class="resend"><a href="/login">Use a different number</a></p>
+
+  {% else %}
+    {% set is_email = method == "email" %}
+    <h1>Enter your code</h1>
+    <p class="lead">We sent a 6-digit code {{ channel }} to <b>{{ display_target }}</b>.</p>
+    {% if notice %}<div class="alert">{{ icon("info") }}<span>{{ notice }}</span></div>{% endif %}
+    {% if error %}<div class="alert error" role="alert">{{ icon("alert") }}<span>{{ error }}</span></div>{% endif %}
+    <form method="post" action="{{ '/login/email/verify' if is_email else '/login/verify' }}" hx-disabled-elt="find button[type=submit]">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="{{ 'email' if is_email else 'phone' }}" value="{{ target }}">
+      {% if is_new %}
+        <label class="field">
+          <span>Your name</span>
+          <input type="text" name="name" value="{{ name or '' }}" autocomplete="name" placeholder="Adv. Priya Sharma" maxlength="255" required>
+          <small>First time here. This is how we'll address you.</small>
+        </label>
+      {% endif %}
+      <label class="field">
+        <span>6-digit code</span>
+        <input class="input-code" type="text" name="code" inputmode="numeric" autocomplete="one-time-code"
+               pattern="[0-9]{6}" maxlength="6" placeholder="••••••" required data-otp {% if not is_new %}autofocus{% endif %}>
+        {% if is_email %}<small>Can't find it? Check your spam or promotions folder.</small>{% endif %}
+      </label>
+      <button class="btn block" type="submit">Log in</button>
+    </form>
+    {% if debug_code %}<p class="devcode">Test mode, code: <code>{{ debug_code }}</code></p>{% endif %}
+    <form class="resend" method="post" action="{{ '/login/email/send' if is_email else '/login/send' }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="{{ 'email' if is_email else 'phone' }}" value="{{ target }}">
+      Didn't get it?
+      <button type="submit" data-countdown="{{ resend_in or 0 }}" {% if resend_in %}disabled{% endif %}>
+        <span data-wait {% if not resend_in %}hidden{% endif %}>Resend in <span data-left>{{ resend_in }}</span>s</span>
+        <span data-ready {% if resend_in %}hidden{% endif %}>Resend code</span>
+      </button>
+    </form>
+    <p class="resend"><a href="/login">Use a different {{ "email" if is_email else "number" }} or another way</a></p>
+  {% endif %}
+  </section>
+
+  <p class="foot">By continuing you agree to receive hearing reminders from CourtPilot. Case data comes from eCourts. Always verify with the court record.</p>
+</main>
+</body>
+</html>

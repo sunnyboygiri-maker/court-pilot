@@ -1,0 +1,41 @@
+{% from "web/_icons.html" import icon %}<!doctype html>
+<html lang="en-IN">
+<head>
+{% include "web/_head.html" %}
+<title>{% block title %}{% endblock %} · {{ app_name }}</title>
+</head>
+<body hx-boost="true">
+{% if flash %}<div class="toast" role="status">{{ icon("check-circle") }}<span>{{ flash }}</span></div>{% endif %}
+<div class="shell">
+  <aside class="sidebar">
+    <a class="brand" href="/">{{ icon("logo") }}{{ app_name }}</a>
+    <nav aria-label="Main">
+      <a href="/" {% if nav == "home" %}aria-current="page"{% endif %}>{{ icon("home") }}Home</a>
+      <a href="/cases" {% if nav == "cases" %}aria-current="page"{% endif %}>{{ icon("cases") }}All cases</a>
+      <a href="/settings" {% if nav == "settings" %}aria-current="page"{% endif %}>{{ icon("settings") }}Settings</a>
+    </nav>
+    <a class="btn block" href="/cases/new">{{ icon("plus") }}Add case</a>
+    <div class="foot">{{ user.name }}<br>{{ cases_used }} of {{ case_limit }} cases · {{ plan_name }} plan</div>
+  </aside>
+
+  <div>
+    <header class="topbar">
+      <a class="brand" href="/">{{ icon("logo") }}{{ app_name }}</a>
+      <span class="usage">{{ cases_used }}/{{ case_limit }} cases</span>
+    </header>
+    <main class="content" id="main">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</div>
+
+{% if show_fab %}<a class="fab" href="/cases/new">{{ icon("plus") }}Add case</a>{% endif %}
+
+<nav class="bottomnav" aria-label="Main">
+  <a href="/" {% if nav == "home" %}aria-current="page"{% endif %}>{{ icon("home") }}Home</a>
+  <a href="/cases" {% if nav == "cases" %}aria-current="page"{% endif %}>{{ icon("cases") }}Cases</a>
+  <a class="add" href="/cases/new" {% if nav == "add" %}aria-current="page"{% endif %}>{{ icon("plus") }}Add</a>
+  <a href="/settings" {% if nav == "settings" %}aria-current="page"{% endif %}>{{ icon("settings") }}Settings</a>
+</nav>
+</body>
+</html>

@@ -1,0 +1,15 @@
+.git
+.env
+__pycache__
+*.pyc
+.pytest_cache
+tests
+celerybeat-schedule*
+.venv
+venv
+.claude
+docs
+.preview
+scripts
+.preview
+scripts

@@ -1,0 +1,129 @@
+{% extends "web/base.html" %}
+{% from "web/_icons.html" import icon %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Settings</h1></div>
+
+<div class="stack">
+  <section class="card" id="telegram">
+    <h2>Telegram reminders</h2>
+    {% if user.telegram_chat_id %}
+      <div class="connected">
+        <span class="dot">{{ icon("check") }}</span>
+        <div><b>Connected</b><br><span>Reminders and login codes go to {% if user.telegram_username %}@{{ user.telegram_username }}{% else %}your Telegram{% endif %}.</span></div>
+      </div>
+    {% else %}
+      <p style="margin-bottom:14px">Get hearing reminders on your phone, free. It takes one tap:</p>
+      {% if telegram_link %}
+        <ol class="steps">
+          <li>Tap <b>Connect Telegram</b> below. Telegram opens.</li>
+          <li>Tap <b>Start</b>. That's it.</li>
+          <li>Come back and refresh this page to check it worked.</li>
+        </ol>
+        <a class="btn block" href="{{ telegram_link }}" target="_blank" rel="noopener" hx-boost="false">Connect Telegram {{ icon("external") }}</a>
+        <p class="hint" style="text-align:center">The button works for 30 minutes. Reload this page for a new one.</p>
+      {% else %}
+        <p class="hint">Telegram reminders aren't available yet. Please check back soon.</p>
+      {% endif %}
+    {% endif %}
+  </section>
+
+  <section class="card" id="reminders">
+    <div class="card-head">
+      <h2>When to remind me</h2>
+      {% if saved == "reminders" %}<span class="saved" role="status">{{ icon("check") }}Saved</span>{% endif %}
+    </div>
+    {% if reminders_error %}<div class="alert error" role="alert">{{ icon("alert") }}<span>{{ reminders_error }}</span></div>{% endif %}
+    <form method="post" action="/settings/reminders"
+          hx-post="/settings/reminders" hx-target="#reminders" hx-select="#reminders" hx-swap="outerHTML" hx-disabled-elt="find button">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="row-2">
+        <label class="field"><span>Reminder time (IST)</span>
+          <input type="time" name="time" value="{{ reminders.time }}" step="900" required>
+          <small>For the 3-day and 2-day reminders and the weekly summary.</small></label>
+        <label class="field"><span>Weekly summary on</span>
+          <select name="day">
+            {% for d in weekdays %}<option value="{{ loop.index0 }}" {% if reminders.day == loop.index0 %}selected{% endif %}>{{ d }}</option>{% endfor %}
+          </select>
+          <small>A list of all hearings in the coming week.</small></label>
+      </div>
+      <p class="hint">The "hearing tomorrow" reminder always comes the evening before.</p>
+      <button class="btn block" type="submit" style="margin-top:16px">Save</button>
+    </form>
+  </section>
+
+  <section class="card" id="profile">
+    <div class="card-head">
+      <h2>Profile</h2>
+      {% if saved == "profile" %}<span class="saved" role="status">{{ icon("check") }}Saved</span>{% endif %}
+    </div>
+    {% if profile_error %}<div class="alert error" role="alert">{{ icon("alert") }}<span>{{ profile_error }}</span></div>{% endif %}
+    {% if email_pending %}
+      <div class="confirm-email">
+        <p><b>Confirm your email.</b> We sent a 6-digit code to <b>{{ email_pending.email }}</b>.</p>
+        {% if email_code_error %}<div class="alert error" role="alert">{{ icon("alert") }}<span>{{ email_code_error }}</span></div>{% endif %}
+        <form method="post" action="/settings/email/verify"
+              hx-post="/settings/email/verify" hx-target="#profile" hx-select="#profile" hx-swap="outerHTML" hx-disabled-elt="find button">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input class="input-code" type="text" name="code" inputmode="numeric" autocomplete="one-time-code"
+                 pattern="[0-9]{6}" maxlength="6" placeholder="••••••" required aria-label="6-digit code" data-otp autofocus>
+          <button class="btn block" type="submit">Confirm email</button>
+        </form>
+        {% if email_pending.debug_code %}<p class="devcode">Test mode, code: <code>{{ email_pending.debug_code }}</code></p>{% endif %}
+      </div>
+    {% endif %}
+    <form method="post" action="/settings/profile"
+          hx-post="/settings/profile" hx-target="#profile" hx-select="#profile" hx-swap="outerHTML" hx-disabled-elt="find button">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label class="field"><span>Name</span>
+        <input type="text" name="name" value="{{ profile.name }}" required maxlength="255" autocomplete="name"></label>
+      <div class="row-2" style="margin-top:16px">
+        <label class="field"><span>Email <span class="hint" style="display:inline">(optional)</span>
+            {% if user.email and user.email_verified %}<span class="badge ok">Confirmed</span>{% elif user.email %}<span class="badge high">Not confirmed</span>{% endif %}</span>
+          <input type="email" name="email" value="{{ profile.email }}" maxlength="255" autocomplete="email" placeholder="you@example.com">
+          <small>For email reminders and logging in with email. We'll send a code to confirm a new address.</small></label>
+        <label class="field"><span>Bar registration no. <span class="hint" style="display:inline">(optional)</span></span>
+          <input type="text" name="bar" value="{{ profile.bar }}" maxlength="50" placeholder="D/1234/2015"></label>
+      </div>
+      <label class="field" style="margin-top:16px"><span>Mobile number</span>
+        <input type="text" value="{{ user.phone|phone if user.phone else 'Not added' }}" disabled>
+        <small>{% if user.phone %}You can log in with this number. It can't be changed here.{% else %}Added automatically when you connect Telegram and share your number.{% endif %}</small></label>
+      <button class="btn block" type="submit" style="margin-top:16px">Save</button>
+    </form>
+  </section>
+
+  <section class="card" id="plan">
+    <h2>Your plan</h2>
+    {% set pct = ((cases_used / case_limit) * 100) | round | int if case_limit else 0 %}
+    <p><b>{{ plan_name }} plan</b>{% if plan_expires %} · renews {{ fmt_date(plan_expires.date()) }}{% endif %}</p>
+    <div class="meter {{ 'full' if cases_used >= case_limit }}" role="img" aria-label="{{ cases_used }} of {{ case_limit }} cases used"><i style="width: {{ [pct, 100]|min }}%"></i></div>
+    <p class="hint" style="margin-top:0">{{ cases_used }} of {{ case_limit }} cases</p>
+
+    <div class="plans">
+      {% for p in plans %}
+        <div class="plan {{ 'current' if p.current }}">
+          <div class="pname">{{ p.name }}{% if p.current %}<span class="badge ok">Current</span>{% endif %}</div>
+          <div class="price">{% if p.price %}₹{{ "{:,}".format(p.price) }}<small> / month</small>{% else %}Free{% endif %}</div>
+          <div class="cap">Up to {{ p.max_cases }} cases · Telegram + Email</div>
+          {% if not p.current %}<button class="btn secondary" type="button" disabled>Coming soon</button>{% endif %}
+        </div>
+      {% endfor %}
+      <div class="plan">
+        <div class="pname">WhatsApp add-on{% if whatsapp_active %}<span class="badge ok">Active</span>{% endif %}</div>
+        <div class="price">+₹{{ whatsapp_price }}<small> / month</small></div>
+        <div class="cap">Reminders on WhatsApp too, with any plan</div>
+        {% if not whatsapp_active %}<button class="btn secondary" type="button" disabled>Coming soon</button>{% endif %}
+      </div>
+    </div>
+    <p class="hint">Online payment is coming soon.</p>
+  </section>
+
+  <section class="card">
+    <h2>Account</h2>
+    <form method="post" action="/logout">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="btn secondary block" type="submit">{{ icon("logout") }}Log out</button>
+    </form>
+  </section>
+</div>
+{% endblock %}

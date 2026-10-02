@@ -1,0 +1,27 @@
+{#- One case as a tappable card. Expects `c` from web.router.card() -#}
+{% set d = c.date %}
+{% set tone = "today" if c.days == 0 else ("soon" if c.days is not none and 0 < c.days <= 3 else "") %}
+<a class="hcard" href="/cases/{{ c.id }}/view">
+  {% if d and not c.disposed %}
+    <div class="datebox {{ tone }}" aria-hidden="true">
+      <span class="dow">{{ d.strftime("%a") }}</span>
+      <span class="dd">{{ d.strftime("%d") }}</span>
+      <span class="mon">{{ d.strftime("%b") }}</span>
+    </div>
+  {% else %}
+    <div class="datebox none" aria-hidden="true">{{ "Disposed" if c.disposed else "No date" }}</div>
+  {% endif %}
+  <div>
+    <div class="when {{ tone }}">
+      <span>{% if d and not c.disposed %}{{ fmt_date(d) }} · {% endif %}{{ c.when }}</span>
+      {% if c.tracked.priority == 2 %}<span class="badge urgent">Urgent</span>{% elif c.tracked.priority == 1 %}<span class="badge high">High</span>{% endif %}
+    </div>
+    <div class="title">{{ c.title }}</div>
+    <div class="meta">
+      {% if c.case.court_name %}<span>{{ c.case.court_name }}</span>{% endif %}
+      {% if c.case.stage %}<span>{{ c.case.stage }}</span>{% endif %}
+      {% if c.tracked.client_name %}<span>Client: {{ c.tracked.client_name }}</span>{% endif %}
+    </div>
+    {% if c.tracked.label %}<span class="label">{{ c.tracked.label }}</span>{% endif %}
+  </div>
+</a>

@@ -1,0 +1,160 @@
+{% extends "web/base.html" %}
+{% from "web/_icons.html" import icon %}
+{% block title %}{{ c.title }}{% endblock %}
+{% block content %}
+<a class="back" href="/cases">{{ icon("back") }}All cases</a>
+
+<div class="case-title" style="margin:6px 0 16px">
+  <h1>{{ c.title }}</h1>
+  <div class="sub">
+    {% if case.case_type or case.case_number %}<span>{{ case.case_type or "" }} {{ case.case_number or "" }}</span>{% endif %}
+    <span class="cnr">CNR {{ case.cnr_number }}</span>
+    {% if c.disposed %}<span class="badge">Disposed</span>{% elif case.status and case.status.value == "pending" %}<span class="badge ok">Pending</span>{% endif %}
+    {% if tracked.priority == 2 %}<span class="badge urgent">Urgent</span>{% elif tracked.priority == 1 %}<span class="badge high">High</span>{% endif %}
+  </div>
+</div>
+
+<div class="stack">
+  <section class="card next-hearing {{ 'today' if c.days == 0 }}">
+    <h2>Next hearing</h2>
+    {% if case.next_hearing_date and not c.disposed %}
+      <div class="big">{{ fmt_date(case.next_hearing_date) }}</div>
+      <div class="rel">{{ c.when }}</div>
+      <p>{{ case.stage or "" }}{% if case.stage and case.court_name %} · {% endif %}{{ case.court_name or "" }}</p>
+    {% elif c.disposed %}
+      <div class="rel">This case has been disposed.</div>
+    {% else %}
+      <div class="rel">No date listed yet</div>
+      <p>We'll tell you as soon as eCourts lists the next date.</p>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <h2>Case</h2>
+    <dl class="facts">
+      <div><dt>Petitioner</dt><dd>{{ case.petitioner or "Not listed" }}</dd></div>
+      {% if case.petitioner_advocate %}<div><dt>Petitioner's advocate</dt><dd>{{ case.petitioner_advocate }}</dd></div>{% endif %}
+      <div><dt>Respondent</dt><dd>{{ case.respondent or "Not listed" }}</dd></div>
+      {% if case.respondent_advocate %}<div><dt>Respondent's advocate</dt><dd>{{ case.respondent_advocate }}</dd></div>{% endif %}
+      <div><dt>Court</dt><dd>{{ case.court_name or "Not listed" }}{% if case.court_complex %}<br><span class="hint" style="margin:0">{{ case.court_complex }}</span>{% endif %}</dd></div>
+      {% if case.bench %}<div><dt>Bench</dt><dd>{{ case.bench }}</dd></div>{% endif %}
+      <div><dt>Judge</dt><dd>{{ case.judge or "Not listed" }}</dd></div>
+      <div><dt>Stage</dt><dd>{{ case.stage or "Not listed" }}</dd></div>
+      {% if case.acts_sections %}
+        <div><dt>Acts</dt><dd>{% for a in case.acts_sections %}{{ a.act }}{% if a.section %}, section {{ a.section }}{% endif %}{% if not loop.last %}<br>{% endif %}{% endfor %}</dd></div>
+      {% endif %}
+      {% if case.filing_date %}<div><dt>Filed</dt><dd>{{ fmt_date(case.filing_date) }}</dd></div>{% endif %}
+    </dl>
+    <div class="btn-row" style="margin-top:16px">
+      <a class="btn secondary" href="{{ ecourts_url }}" target="_blank" rel="noopener" hx-boost="false">Open on eCourts {{ icon("external") }}</a>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Orders</h2>
+    {% if orders %}
+      <ul class="rows">
+        {% for o in orders %}
+          <li>
+            <div class="what"><b>{{ o.label }}</b>{% if o.description %}<span>{{ o.description }}</span>{% endif %}</div>
+            {% if o.safe_link %}<a class="btn secondary" href="{{ o.safe_link }}" target="_blank" rel="noopener" hx-boost="false">{{ icon("file") }}Open PDF</a>{% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="hint" style="margin:0">No orders uploaded yet. We'll alert you when one appears.</p>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <h2>Hearing history</h2>
+    {% if timeline %}
+      {% macro hearing(e) %}
+        <li class="{{ 'future' if e.is_future }} {{ 'next' if e.is_next }}">
+          <b>{{ e.label }}{% if e.is_next %} · next hearing{% endif %}</b>
+          {% if e.purpose or e.judge %}<span>{{ e.purpose or "" }}{% if e.purpose and e.judge %} · {% endif %}{{ e.judge or "" }}</span>{% endif %}
+        </li>
+      {% endmacro %}
+      <ol class="timeline">{% for e in timeline[:6] %}{{ hearing(e) }}{% endfor %}</ol>
+      {% if timeline|length > 6 %}
+        <details class="more">
+          <summary class="btn ghost">Show all {{ timeline|length }} hearings</summary>
+          <ol class="timeline">{% for e in timeline[6:] %}{{ hearing(e) }}{% endfor %}</ol>
+        </details>
+      {% endif %}
+    {% else %}
+      <p class="hint" style="margin:0">No hearings recorded yet.</p>
+    {% endif %}
+  </section>
+
+  <section class="card" id="edit-card">
+    <div class="card-head">
+      <h2>Your notes</h2>
+      {% if saved == "edit" %}<span class="saved" role="status">{{ icon("check") }}Saved</span>{% endif %}
+    </div>
+    <form method="post" action="/cases/{{ case.id }}/edit"
+          hx-post="/cases/{{ case.id }}/edit" hx-target="#edit-card" hx-select="#edit-card" hx-swap="outerHTML" hx-disabled-elt="find button">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="row-2">
+        <label class="field"><span>Label</span>
+          <input type="text" name="label" value="{{ tracked.label or '' }}" maxlength="255" placeholder="e.g. Sharma recovery suit"></label>
+        <label class="field"><span>Client name</span>
+          <input type="text" name="client_name" value="{{ tracked.client_name or '' }}" maxlength="255"></label>
+      </div>
+      <label class="field"><span>Notes</span>
+        <textarea name="notes" rows="4" placeholder="Next steps, documents to carry, who's appearing…">{{ tracked.notes or '' }}</textarea></label>
+      <fieldset class="field" style="border:0;padding:0;margin:16px 0 0">
+        <legend style="font-weight:600;margin-bottom:6px;padding:0">Priority</legend>
+        <div class="seg">
+          {% for value, name in priorities.items() %}
+            <label><input type="radio" name="priority" value="{{ value }}" {% if (tracked.priority or 0) == value %}checked{% endif %}><span>{{ name }}</span></label>
+          {% endfor %}
+        </div>
+      </fieldset>
+      <button class="btn block" type="submit" style="margin-top:20px">Save</button>
+    </form>
+  </section>
+
+  <section class="card" id="alerts-card">
+    <div class="card-head">
+      <h2>Reminders for this case</h2>
+      {% if saved == "alerts" %}<span class="saved" role="status">{{ icon("check") }}Saved</span>{% endif %}
+    </div>
+    <form method="post" action="/cases/{{ case.id }}/alerts" data-autosave
+          hx-post="/cases/{{ case.id }}/alerts" hx-target="#alerts-card" hx-select="#alerts-card" hx-swap="outerHTML">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label class="toggle-row">
+        <span class="what"><b>Telegram</b><span>{% if telegram_linked %}Free, recommended{% else %}Not connected yet. <a href="/settings#telegram">Connect</a>{% endif %}</span></span>
+        <span class="switch"><input type="checkbox" name="notify_telegram" {% if tracked.notify_telegram %}checked{% endif %}><i></i></span>
+      </label>
+      <label class="toggle-row">
+        <span class="what"><b>Email</b><span>{% if has_email %}Free{% else %}Add your email in <a href="/settings#profile">Settings</a>{% endif %}</span></span>
+        <span class="switch"><input type="checkbox" name="notify_email" {% if tracked.notify_email %}checked{% endif %}><i></i></span>
+      </label>
+      <label class="toggle-row">
+        <span class="what"><b>WhatsApp</b>
+          {% if whatsapp_unlocked %}<span>Included in your plan</span>{% else %}<span class="lock">{{ icon("lock") }}WhatsApp add-on, coming soon</span>{% endif %}</span>
+        <span class="switch"><input type="checkbox" name="notify_whatsapp" {% if tracked.notify_whatsapp and whatsapp_unlocked %}checked{% endif %} {% if not whatsapp_unlocked %}disabled{% endif %}><i></i></span>
+      </label>
+      <noscript><button class="btn secondary" type="submit" style="margin-top:12px">Save</button></noscript>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>Stop tracking</h2>
+    <details class="confirm">
+      <summary class="btn danger-outline">Stop tracking this case</summary>
+      <div class="confirm-box">
+        <p>Stop tracking this case? You'll no longer get reminders for it. Your label and notes will be deleted.</p>
+        <form method="post" action="/cases/{{ case.id }}/untrack" class="btn-row">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button class="btn danger" type="submit">Yes, stop tracking</button>
+          <a class="btn secondary" href="/cases/{{ case.id }}/view">Cancel</a>
+        </form>
+      </div>
+    </details>
+  </section>
+
+  <p class="hint" style="text-align:center">Case details from eCourts{% if case.last_polled_at %}, last checked {{ case.last_polled_at.strftime("%d %b %Y") }}{% endif %}. Always verify with the court record.</p>
+</div>
+{% endblock %}

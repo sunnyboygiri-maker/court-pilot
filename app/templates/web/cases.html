@@ -1,0 +1,52 @@
+{% extends "web/base.html" %}
+{% from "web/_icons.html" import icon %}
+{% block title %}All cases{% endblock %}
+{% macro chip(label, s, p) -%}
+  {%- set active = (status == s and priority == p) -%}
+  <a class="chip" aria-pressed="{{ 'true' if active else 'false' }}"
+     href="/cases?{% if q %}q={{ q|urlencode }}&{% endif %}status={{ s }}&priority={{ p }}">{{ label }}</a>
+{%- endmacro %}
+{% block content %}
+<div class="page-head"><h1>All cases</h1></div>
+
+<div class="searchbar">
+  <form method="get" action="/cases" role="search"
+        hx-get="/cases" hx-trigger="input changed delay:350ms from:input[name=q], submit" hx-target="#results" hx-select="#results" hx-swap="outerHTML" hx-push-url="true">
+    <input type="hidden" name="status" value="{{ status }}">
+    <input type="hidden" name="priority" value="{{ priority }}">
+    <label class="search-wrap">
+      <span class="sr-only">Search cases</span>
+      {{ icon("search") }}
+      <input type="search" name="q" value="{{ q }}" placeholder="Party, client, label or CNR" autocomplete="off" enterkeyhint="search">
+    </label>
+  </form>
+  <div class="chips" aria-label="Filter">
+    {{ chip("All", "", "") }}
+    {{ chip("Pending", "pending", "") }}
+    {{ chip("Disposed", "disposed", "") }}
+    {{ chip("Urgent", "", "2") }}
+    {{ chip("High priority", "", "1") }}
+  </div>
+</div>
+
+<div id="results">
+  {% if items %}
+    <p class="result-count">{{ items|length }} case{{ "s" if items|length != 1 }}{% if filtered %} found{% endif %}, soonest hearing first</p>
+    {% for c in items %}{% include "web/_hearing_card.html" %}{% endfor %}
+  {% elif filtered %}
+    <section class="card empty">
+      <div class="art">{{ icon("search") }}</div>
+      <h2>No matching cases</h2>
+      <p>Try a different name, or clear the filters.</p>
+      <a class="btn secondary" href="/cases">Show all cases</a>
+    </section>
+  {% else %}
+    <section class="card empty">
+      <div class="art">{{ icon("cases") }}</div>
+      <h2>No cases yet</h2>
+      <p>Add a case with its CNR number and it will appear here.</p>
+      <a class="btn" href="/cases/new">{{ icon("plus") }}Add a case</a>
+    </section>
+  {% endif %}
+</div>
+{% endblock %}

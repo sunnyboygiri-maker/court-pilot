@@ -1,0 +1,52 @@
+{% extends "web/base.html" %}
+{% from "web/_icons.html" import icon %}
+{% block title %}Home{% endblock %}
+{% block content %}
+<div class="greeting">
+  <h1>Hello, {{ user.name or "Counsel" }}</h1>
+  <p>{{ fmt_date(today) }}</p>
+</div>
+
+{% if not telegram_linked %}
+  <div class="alert warn" style="margin-top:16px">{{ icon("bell") }}
+    <span><b>Reminders are off.</b> Connect Telegram to get hearing reminders on your phone. <a href="/settings#telegram">Connect now</a></span>
+  </div>
+{% endif %}
+
+{% if not has_cases %}
+  <section class="card empty" style="margin-top:20px">
+    <div class="art">{{ icon("calendar") }}</div>
+    <h2>Add your first case</h2>
+    <p>We'll check eCourts for you several times a day and remind you 3 days, 2 days and the evening before every hearing.</p>
+    <div class="cnr-explainer">
+      <b>All you need is the CNR number</b>
+      Every case in India has a 16-character CNR number, like <span class="cnr-sample">DLHC010582482024</span>.
+      It's printed at the top of the case page on eCourts and on the cause list.
+    </div>
+    <a class="btn block" href="/cases/new">{{ icon("plus") }}Add a case</a>
+  </section>
+{% else %}
+  <div class="summary">
+    <a href="#today" class="{{ 'hot' if counts.today }}"><span class="n">{{ counts.today }}</span><span class="l">Today</span></a>
+    <a href="#tomorrow"><span class="n">{{ counts.tomorrow }}</span><span class="l">Tomorrow</span></a>
+    <a href="#week"><span class="n">{{ counts.week }}</span><span class="l">This week</span></a>
+  </div>
+
+  {% if all_disposed %}
+    <section class="card empty">
+      <div class="art">{{ icon("check-circle") }}</div>
+      <h2>No upcoming hearings</h2>
+      <p>All your tracked cases are disposed. Add a new case to get reminders.</p>
+      <a class="btn" href="/cases">See all cases</a>
+    </section>
+  {% endif %}
+
+  {% for g in groups if g["items"] %}
+    <section class="group" id="{{ g.key }}">
+      <div class="group-head"><h2>{{ g.title }}</h2><span class="count">{{ g["items"]|length }}</span></div>
+      {% if g.note %}<p class="group-note">{{ g.note }}</p>{% endif %}
+      {% for c in g["items"] %}{% include "web/_hearing_card.html" %}{% endfor %}
+    </section>
+  {% endfor %}
+{% endif %}
+{% endblock %}

@@ -1,0 +1,8 @@
+{% extends "_base.html" %}
+{% block title %}Your {{ app_name }} code{% endblock %}
+{% block content %}
+<p style="margin:0 0 12px;">Use this code to continue on {{ app_name }}:</p>
+<p style="margin:0 0 16px;font-size:32px;font-weight:700;letter-spacing:8px;font-family:monospace;color:#1d3557;">{{ code }}</p>
+<p style="margin:0;color:#52606d;">It expires in {{ minutes }} minutes. Never share it with anyone, including {{ app_name }} staff.</p>
+{% endblock %}
+{% block footer %}If you didn't ask for this code, you can ignore this email. Someone may have typed your address by mistake.{% endblock %}

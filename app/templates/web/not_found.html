@@ -1,0 +1,11 @@
+{% extends "web/base.html" %}
+{% from "web/_icons.html" import icon %}
+{% block title %}Case not found{% endblock %}
+{% block content %}
+<section class="card empty" style="margin-top:16px">
+  <div class="art">{{ icon("search") }}</div>
+  <h2>We couldn't find that case</h2>
+  <p>It may have been removed from your list.</p>
+  <a class="btn" href="/cases">See all cases</a>
+</section>
+{% endblock %}
