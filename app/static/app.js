@@ -77,3 +77,10 @@
     document.querySelectorAll("form.busy").forEach(function (f) { f.classList.remove("busy"); clearInterval(f._progress); });
   });
 })();
+
+// "Select all" on search results
+document.addEventListener("change", function (e) {
+  if (e.target.matches("[data-select-all]")) {
+    document.querySelectorAll(".hit-check").forEach(function (c) { c.checked = e.target.checked; });
+  }
+});

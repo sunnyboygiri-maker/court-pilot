@@ -91,6 +91,7 @@ alembic upgrade head
 uvicorn app.main:app --reload
 celery -A workers.celery_app worker -Q celery -l info    # reminders & alerts
 celery -A workers.celery_app worker -Q polling -l info   # eCourts polling
+celery -A workers.celery_app worker -Q search -l info    # "Find a case" searches
 celery -A workers.celery_app beat -l info
 python -m bot.telegram_bot          # polling mode, if TELEGRAM_WEBHOOK_URL is unset
 ```
@@ -116,6 +117,10 @@ templates in `app/templates/web/`, styles in `app/static/`.
   - Accounts without a phone connect Telegram with a one-tap link in Settings
     (`t.me/<bot>?start=link_<token>`); sharing their number in the bot then adds it.
   - Buttons for Google/email only show when configured (always in DEBUG).
+- **Add a case** (`/cases/new`): by CNR, or without one, by party name (any spelling),
+  case number, FIR, or "My cases" (imports an advocate's cases from eCourts). Searches
+  run in the background with live progress; results are ranked and added with one tap.
+  Courts are saved per lawyer in "My courts" (Settings).
 - **Session**: httpOnly cookie (Secure on HTTPS, SameSite=Lax), 30 days. API bearer
   tokens and web cookies are not interchangeable. Every form carries a CSRF token.
 - The web routes are mounted before the API, so `/cases/new` isn't read as

@@ -425,3 +425,17 @@ async def test_google_and_email_reach_the_same_account(client, db, google, email
     r = await client.post("/login/email/verify", data={"csrf_token": csrf, "email": "lawyer@gmail.com", "code": email_codes["lawyer@gmail.com"]})
     assert r.status_code == 303
     assert len((await db.scalars(select(User).where(User.email == "lawyer@gmail.com"))).all()) == 1
+
+
+def test_links_inside_forms_do_not_inherit_hx_disabled_elt():
+    """htmx passes hx-disabled-elt down to links and hx-get dropdowns in the form; on those
+    "find button" finds nothing and the request silently dies (this broke "Choose your court"
+    and the state -> district picker)."""
+    from pathlib import Path
+
+    for path in (Path(__file__).parent.parent / "app" / "templates" / "web").glob("*.html"):
+        for form in re.findall(r"<form[^>]*>.*?</form>", path.read_text(encoding="utf-8"), re.S):
+            opening = form.split(">", 1)[0]
+            inner = form.split(">", 1)[1]
+            if "hx-disabled-elt" in opening and ("<a " in inner or "hx-get" in inner):
+                assert "hx-disinherit" in opening, f"{path.name}: {opening[:80]}"

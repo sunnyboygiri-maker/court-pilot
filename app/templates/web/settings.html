@@ -28,6 +28,26 @@
     {% endif %}
   </section>
 
+  <section class="card" id="courts">
+    <h2>My courts</h2>
+    {% if my_courts %}
+      <ul class="rows">
+        {% for c in my_courts %}
+          <li>
+            <div class="what"><b>{{ c.complex_name }}</b><span>{{ c.dist_name }}, {{ c.state_name }}</span></div>
+            <form method="post" action="/my-courts/{{ c.id }}/remove">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="btn ghost" type="submit">Remove</button>
+            </form>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="hint" style="margin:0 0 4px">Add the courts you practise in to find cases by name, case number or FIR.</p>
+    {% endif %}
+    <a class="add-court" href="/my-courts/add?back=%2Fsettings%23courts">{{ icon("plus") }}Add a court</a>
+  </section>
+
   <section class="card" id="reminders">
     <div class="card-head">
       <h2>When to remind me</h2>

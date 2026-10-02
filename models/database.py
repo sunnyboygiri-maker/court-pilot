@@ -232,6 +232,95 @@ class NotificationLog(Base):
     )
 
 
+# --- Finding cases without a CNR ---
+
+class CaseIndex(Base):
+    """
+    Every case CourtPilot has ever seen in an eCourts search result (or cause
+    list), whether or not anyone tracks it. Searched first, so name searches
+    get instant, spelling-tolerant, year-free answers as it grows.
+    """
+    __tablename__ = "case_index"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    cnr_number = Column(String(25), unique=True, nullable=False, index=True)
+    case_type = Column(String(100), nullable=True)
+    case_number = Column(String(100), nullable=True)  # e.g. "SPCS/33/2018"
+    reg_year = Column(Integer, nullable=True)
+    petitioner = Column(Text, nullable=True)
+    respondent = Column(Text, nullable=True)
+    fir = Column(String(50), nullable=True)  # "12/2019"
+    court_name = Column(String(255), nullable=True)
+    state_code = Column(String(10), nullable=True)
+    dist_code = Column(String(10), nullable=True)
+    complex_code = Column(String(20), nullable=True)
+    # search.names.name_key() of both parties: phonetic skeletons, space separated
+    name_key = Column(Text, nullable=True)
+    first_seen_at = Column(DateTime, server_default=func.now())
+    last_seen_at = Column(DateTime, server_default=func.now())
+
+    __table_args__ = (
+        Index("ix_case_index_place", "state_code", "dist_code", "complex_code"),
+    )
+
+
+class UserCourt(Base):
+    """A court complex a lawyer practises in ("My courts")."""
+    __tablename__ = "user_courts"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    state_code = Column(String(10), nullable=False)
+    state_name = Column(String(100), nullable=False)
+    dist_code = Column(String(10), nullable=False)
+    dist_name = Column(String(100), nullable=False)
+    # Portal dropdown value "complexcode@est1,est2@Y|N"
+    complex_value = Column(String(255), nullable=False)
+    complex_name = Column(String(255), nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+
+    __table_args__ = (UniqueConstraint("user_id", "complex_value", name="uq_user_court"),)
+
+
+class SearchJob(Base):
+    """One "find a case" search, run in the background across courts/years."""
+    __tablename__ = "search_jobs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    kind = Column(String(20), nullable=False)  # name | number | fir | advocate
+    params = Column(JSON, nullable=False)
+    status = Column(String(20), nullable=False, default="queued")  # queued | running | done | failed
+    total = Column(Integer, nullable=False, default=0)
+    done = Column(Integer, nullable=False, default=0)
+    failed = Column(Integer, nullable=False, default=0)
+    error = Column(Text, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    finished_at = Column(DateTime, nullable=True)
+
+    hits = relationship("SearchHit", back_populates="job", cascade="all, delete-orphan")
+
+
+class SearchHit(Base):
+    __tablename__ = "search_hits"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    job_id = Column(Integer, ForeignKey("search_jobs.id", ondelete="CASCADE"), nullable=False, index=True)
+    cnr_number = Column(String(25), nullable=False)
+    case_type = Column(String(100), nullable=True)
+    case_number = Column(String(100), nullable=True)
+    petitioner = Column(Text, nullable=True)
+    respondent = Column(Text, nullable=True)
+    fir = Column(String(50), nullable=True)
+    court_name = Column(String(255), nullable=True)
+    score = Column(Float, nullable=False, default=1.0)
+    source = Column(String(20), nullable=False, default="ecourts")  # ecourts | index
+
+    job = relationship("SearchJob", back_populates="hits")
+
+    __table_args__ = (UniqueConstraint("job_id", "cnr_number", name="uq_search_hit"),)
+
+
 # --- Plan limits lookup ---
 
 PLAN_LIMITS = {

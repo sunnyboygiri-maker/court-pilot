@@ -38,14 +38,20 @@ os.environ.update(
     TELEGRAM_BOT_USERNAME=os.environ.get("PREVIEW_BOT_USERNAME", ""),
     TELEGRAM_WEBHOOK_URL="",
     APP_BASE_URL="http://127.0.0.1:8010",
+    # No Celery here: "Find a case" searches run inside this process
+    SEARCH_INLINE="true",
 )
 
+import fakeredis  # noqa: E402
 import fakeredis.aioredis  # noqa: E402
 
 import app.redis as app_redis  # noqa: E402
+import workers.redis_client as worker_redis  # noqa: E402
 
 _fake = fakeredis.aioredis.FakeRedis(decode_responses=True)
 app_redis.get_redis = lambda: _fake
+_fake_sync = fakeredis.FakeRedis(decode_responses=True)
+worker_redis.get_sync_redis = lambda: _fake_sync
 
 from sqlalchemy import create_engine, select  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402

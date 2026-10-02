@@ -44,6 +44,7 @@ from config.settings import settings
 from config.timeutils import today_ist
 from models.database import (
     PLAN_LIMITS, WHATSAPP_ADDON_PRICE, CaseSnapshot, CaseStatus, CourtCase, PlanTier, TrackedCase, User,
+    UserCourt,
 )
 from models.session import get_db
 from notifications.sms import sms_configured
@@ -455,11 +456,7 @@ async def cases_list(
 
 # --- Add case ---
 
-@router.get("/cases/new")
-async def add_case_page(request: Request, cnr: str = "", user: User = Depends(get_web_user), db: AsyncSession = Depends(get_db)):
-    ctx = await page_context(db, user, "add")
-    ctx["form"] = {"cnr": cnr}
-    return render(request, "web/case_new.html", ctx)
+# GET /cases/new (the "Add a case" hub with its search tabs) lives in app/web/find.py
 
 
 @router.post("/cases/new", dependencies=[Depends(verify_csrf)])
@@ -502,8 +499,10 @@ async def add_case(
         error = ("eCourts isn't responding right now. This often happens during court hours. "
                  "Please try again in a few minutes.")
     if error:
-        ctx = await page_context(db, user, "add")
-        ctx.update(form=form, error=error, error_link=error_link)
+        from app.web.find import hub_context
+
+        ctx = await hub_context(db, user, "cnr", error=error, error_link=error_link)
+        ctx["form"].update(form)
         return render(request, "web/case_new.html", ctx)
     return redirect(request, f"/cases/{tracked.case_id}/view", "Case added. We'll remind you before every hearing.")
 
@@ -635,6 +634,7 @@ async def _settings_page(request: Request, db: AsyncSession, redis: Redis, user:
     ctx.update(
         bot_username=await bot_username(),
         telegram_link=None if user.telegram_chat_id else await telegram_link(redis, user),
+        my_courts=list((await db.scalars(select(UserCourt).where(UserCourt.user_id == user.id).order_by(UserCourt.id))).all()),
         weekdays=WEEKDAYS,
         plans=[
             {"tier": t, "name": PLAN_NAMES[t], "max_cases": v["max_cases"], "price": v["price_monthly"], "current": t == current}

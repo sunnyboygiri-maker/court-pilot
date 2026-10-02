@@ -13,7 +13,7 @@ celery_app = Celery(
     "courtpilot",
     broker=settings.REDIS_URL,
     backend=settings.REDIS_URL,
-    include=["workers.tasks.poll_cases", "workers.tasks.send_notifications"],
+    include=["workers.tasks.poll_cases", "workers.tasks.send_notifications", "workers.tasks.search"],
 )
 
 celery_app.conf.update(
@@ -29,7 +29,11 @@ celery_app.conf.update(
     # eCourts lookups take tens of seconds each; on their own queue (served by
     # the `poller` service) a big poll batch can't delay reminders, which stay
     # on the default "celery" queue
-    task_routes={"workers.tasks.poll_cases.*": {"queue": "polling"}},
+    task_routes={
+        "workers.tasks.poll_cases.*": {"queue": "polling"},
+        # Lawyers wait on screen for these, so they get their own worker
+        "workers.tasks.search.*": {"queue": "search"},
+    },
 )
 
 

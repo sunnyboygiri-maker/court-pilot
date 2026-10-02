@@ -13,6 +13,7 @@ from app.cases.router import router as cases_router
 from app.redis import close_redis, get_redis
 from app.users.router import router as users_router
 from app.views.router import router as views_router
+from app.web.find import router as find_router
 from app.web.router import router as web_router
 from app.web.session import CSRFFailed, WebAuthRedirect, csrf_failed_handler, web_auth_redirect_handler
 from app.webhooks.telegram import router as telegram_webhook_router
@@ -77,6 +78,7 @@ app.add_exception_handler(CSRFFailed, csrf_failed_handler)
 
 # Web pages first: /cases/new must not be taken for the API's /cases/{case_id}
 app.include_router(web_router)
+app.include_router(find_router)
 app.include_router(auth_router)
 app.include_router(cases_router)
 app.include_router(users_router)

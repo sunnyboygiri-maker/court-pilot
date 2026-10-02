@@ -1,0 +1,37 @@
+{% extends "web/base.html" %}
+{% from "web/_icons.html" import icon %}
+{% block title %}Add a court{% endblock %}
+{% block content %}
+<a class="back" href="{{ back }}">{{ icon("back") }}Back</a>
+<div class="page-head">
+  <h1>Add a court</h1>
+  <p>Pick the court complex where your cases are. It's saved in My courts, so you only do this once.</p>
+</div>
+
+<section class="card">
+  <form method="post" action="/my-courts" hx-disabled-elt="find button" hx-disinherit="hx-disabled-elt">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="back" value="{{ back }}">
+    <label class="field"><span>State</span>
+      <select name="state" required hx-get="/find/districts" hx-target="#district" hx-swap="innerHTML"
+              hx-indicator="#district-wait">{{ states_html|safe }}</select></label>
+    <label class="field"><span>District <span id="district-wait" class="htmx-indicator hint" style="margin:0">loading…</span></span>
+      <select name="district" id="district" required hx-get="/find/complexes" hx-include="[name=state]"
+              hx-target="#complex" hx-swap="innerHTML" hx-indicator="#complex-wait">
+        <option value="">Choose a state first</option></select></label>
+    <label class="field"><span>Court complex <span id="complex-wait" class="htmx-indicator hint" style="margin:0">loading…</span></span>
+      <select name="complex" id="complex" required><option value="">Choose a district first</option></select>
+      <small>The building or court the case is listed in, e.g. "Tis Hazari Courts" or "Taluka Court, Dhoraji".</small></label>
+    <button class="btn block" type="submit" style="margin-top:20px">{{ icon("plus") }}Add to My courts</button>
+  </form>
+</section>
+
+{% if courts %}
+<section class="card">
+  <h2>Already in My courts</h2>
+  <ul class="rows">
+    {% for c in courts %}<li><div class="what"><b>{{ c.complex_name }}</b><span>{{ c.dist_name }}, {{ c.state_name }}</span></div></li>{% endfor %}
+  </ul>
+</section>
+{% endif %}
+{% endblock %}

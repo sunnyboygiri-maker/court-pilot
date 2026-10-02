@@ -72,6 +72,9 @@ class Settings(BaseSettings):
     ECOURTS_MIN_REPOLL_HOURS: int = 4
     # The mobile-API fallback endpoint is unverified; keep it off unless confirmed
     ECOURTS_MOBILE_API_FALLBACK: bool = False
+    # "Find a case" searches run in the `searcher` Celery worker; true runs them
+    # inside the API process instead (local preview / tests without Celery)
+    SEARCH_INLINE: bool = False
 
     # Notification schedule (IST)
     WEEKLY_DIGEST_DAY: int = 0  # Monday

@@ -41,6 +41,14 @@ services:
       api:
         condition: service_healthy
 
+  # "Find a case" searches and first fetches of cases added from them
+  searcher:
+    <<: *app
+    command: celery -A workers.celery_app worker -Q search -n search@%h -l info --concurrency 2
+    depends_on:
+      api:
+        condition: service_healthy
+
   beat:
     <<: *app
     # Schedule state lives in /tmp so the container user can write it

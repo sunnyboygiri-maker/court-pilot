@@ -112,7 +112,12 @@ async def poll_one(db: AsyncSession, case_id: int, scraper: ECourtsScraper) -> O
         return PollResult(case_id, ok=False, error=str(e))
 
     result = PollResult(case_id, ok=True, data_hash=data.get("data_hash"))
-    if data.get("data_hash") != court_case.data_hash:
+    if court_case.data_hash is None:
+        # First full fetch of a case added from search results (it only had
+        # the parties and number): nothing has "changed", so no alerts
+        db.add(CaseSnapshot(case_id=court_case.id, data_hash=data["data_hash"],
+                            snapshot_data={k: v for k, v in data.items() if k != "raw_data"}))
+    elif data.get("data_hash") != court_case.data_hash:
         result.changes = CaseDiffDetector.detect_changes(case_to_dict(court_case), comparable(data))
         result.changed = True
         db.add(

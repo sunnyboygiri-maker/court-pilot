@@ -1,30 +1,67 @@
 {% extends "web/base.html" %}
 {% from "web/_icons.html" import icon %}
 {% block title %}Add case{% endblock %}
+
+{#- My courts, as checkboxes (or radios when only one court makes sense) -#}
+{% macro court_picker(multi=True, hint="") %}
+  <fieldset class="field courts-pick" id="courts-{{ by }}">
+    <legend>{{ "Courts to search" if multi else "Court" }}</legend>
+    {% if courts %}
+      <div class="court-list">
+        {% for c in courts %}
+          <label class="court-opt">
+            <input type="{{ 'checkbox' if multi else 'radio' }}" name="court_ids" value="{{ c.id }}"
+                   {% if (form.court_ids and c.id|string in form.court_ids) or (not form.court_ids and (multi or loop.first)) %}checked{% endif %}>
+            <span><b>{{ c.complex_name }}</b><small>{{ c.dist_name }}, {{ c.state_name }}</small></span>
+          </label>
+        {% endfor %}
+      </div>
+      <a class="add-court" href="/my-courts/add?back={{ ('/cases/new?by=' ~ by)|urlencode }}">{{ icon("plus") }}Add another court</a>
+      {% if hint %}<small>{{ hint }}</small>{% endif %}
+    {% else %}
+      <div class="no-courts">
+        <p><b>First, tell us which court.</b> eCourts searches one court complex at a time. We'll remember it for next time.</p>
+        <a class="btn secondary" href="/my-courts/add?back={{ ('/cases/new?by=' ~ by)|urlencode }}">{{ icon("plus") }}Choose your court</a>
+      </div>
+    {% endif %}
+  </fieldset>
+{% endmacro %}
+
+{% macro year_select(field, value) %}
+  <select name="{{ field }}">
+    {% for y in years %}<option value="{{ y }}" {% if y|string == value|string %}selected{% endif %}>{{ y }}</option>{% endfor %}
+  </select>
+{% endmacro %}
+
 {% block content %}
 <div class="page-head">
   <h1>Add a case</h1>
   <p>{{ cases_used }} of {{ case_limit }} cases used on your {{ plan_name }} plan.</p>
 </div>
 
-<section class="card">
-  <form method="post" action="/cases/new" data-long-request hx-disabled-elt="find button[type=submit]">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<nav class="chips tabs" aria-label="How to find the case">
+  {% for key, label in tabs %}
+    <a class="chip" href="/cases/new?by={{ key }}" aria-pressed="{{ 'true' if by == key else 'false' }}">{{ label }}</a>
+  {% endfor %}
+</nav>
 
+<section class="card" style="margin-top:14px">
+{% if error %}
+  <div class="alert error" role="alert">{{ icon("alert") }}
+    <span>{{ error }}{% if error_link %} <a href="{{ error_link[0] }}">{{ error_link[1] }}</a>{% endif %}</span>
+  </div>
+{% endif %}
+
+{% if by == "cnr" %}
+  <form method="post" action="/cases/new" data-long-request hx-disabled-elt="find button[type=submit]" hx-disinherit="hx-disabled-elt">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <div class="progress" role="status" aria-live="polite">
       <div class="spinner"></div>
       <h3>Finding your case on eCourts</h3>
       <p data-progress-msg>This can take up to a minute. Please keep this page open.</p>
       <div class="bar"><i></i></div>
     </div>
-
     <div class="form-body">
-      {% if error %}
-        <div class="alert error" role="alert">{{ icon("alert") }}
-          <span>{{ error }}{% if error_link %} <a href="{{ error_link[0] }}">{{ error_link[1] }}</a>{% endif %}</span>
-        </div>
-      {% endif %}
-
       <label class="field">
         <span>CNR number</span>
         <input class="input-big" type="text" name="cnr" value="{{ form.cnr or '' }}" required
@@ -40,26 +77,108 @@
           <li>The first 4 letters are the court code, e.g. <b>DLHC</b> for Delhi High Court.</li>
         </ol>
       </details>
+      <p class="hint">No CNR? Find the case by <a href="/cases/new?by=name">party name</a>, <a href="/cases/new?by=number">case number</a> or <a href="/cases/new?by=fir">FIR</a>.</p>
 
       <p class="optional-head">Optional, for your reference</p>
       <div class="row-2">
-        <label class="field">
-          <span>Label</span>
-          <input type="text" name="label" value="{{ form.label or '' }}" maxlength="255" placeholder="e.g. Sharma recovery suit">
-        </label>
-        <label class="field">
-          <span>Client name</span>
-          <input type="text" name="client_name" value="{{ form.client_name or '' }}" maxlength="255" placeholder="e.g. Sharma Textiles">
-        </label>
+        <label class="field"><span>Label</span>
+          <input type="text" name="label" value="{{ form.label or '' }}" maxlength="255" placeholder="e.g. Sharma recovery suit"></label>
+        <label class="field"><span>Client name</span>
+          <input type="text" name="client_name" value="{{ form.client_name or '' }}" maxlength="255" placeholder="e.g. Sharma Textiles"></label>
       </div>
-      <label class="field">
-        <span>Notes</span>
-        <textarea name="notes" rows="3" placeholder="Anything you want to remember about this case">{{ form.notes or '' }}</textarea>
-      </label>
-
+      <label class="field"><span>Notes</span>
+        <textarea name="notes" rows="3" placeholder="Anything you want to remember about this case">{{ form.notes or '' }}</textarea></label>
       <button class="btn block" type="submit" style="margin-top:20px">{{ icon("plus") }}Add case</button>
       <p class="hint" style="text-align:center">Only you can see your label, client name and notes.</p>
     </div>
   </form>
+
+{% elif by == "name" %}
+  <form method="post" action="/find" hx-disabled-elt="find button[type=submit]" hx-disinherit="hx-disabled-elt">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="kind" value="name">
+    <p class="lead-in">Type the name the way you know it. We also search the usual other spellings: <i>Jitender</i> finds Jitendra, Jitendar and Jeetender too.</p>
+    <label class="field"><span>Petitioner or respondent name</span>
+      <input type="text" name="name" value="{{ form.name or '' }}" required minlength="3" maxlength="120"
+             placeholder="e.g. Jitender Kumar" autocomplete="off" {% if courts and not error %}autofocus{% endif %}></label>
+    <label class="field"><span>Other party <span class="hint" style="display:inline">(optional, helps rank the results)</span></span>
+      <input type="text" name="other_party" value="{{ form.other_party or '' }}" maxlength="120" placeholder="e.g. State, or the other side's name" autocomplete="off"></label>
+    <div class="field">
+      <span>Year the case was filed</span>
+      <div class="year-range">{{ year_select("year_from", form.year_from) }}<span>to</span>{{ year_select("year_to", form.year_to) }}</div>
+      <small>Not sure? Keep a range. Each extra year adds a few seconds.</small>
+    </div>
+    {{ court_picker(True) }}
+    {% if courts %}<button class="btn block" type="submit" style="margin-top:20px">{{ icon("search") }}Search</button>{% endif %}
+  </form>
+
+{% elif by == "number" %}
+  <form method="post" action="/find" hx-disabled-elt="find button[type=submit]" hx-disinherit="hx-disabled-elt">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="kind" value="number">
+    {{ court_picker(False) }}
+    {% if courts %}
+      <label class="field"><span>Case type</span>
+        <select name="case_type" required hx-get="/find/case-types" hx-trigger="load, change from:#courts-number"
+                hx-include="#courts-number" hx-swap="innerHTML"><option value="">Loading case types…</option></select></label>
+      <div class="row-2">
+        <label class="field"><span>Case number</span>
+          <input type="text" name="number" value="{{ form.number or '' }}" inputmode="numeric" required maxlength="10" placeholder="e.g. 412"></label>
+        <label class="field"><span>Year</span>
+          <input type="text" name="year" value="{{ form.year or '' }}" inputmode="numeric" required maxlength="4" placeholder="e.g. 2024"></label>
+      </div>
+      <button class="btn block" type="submit" style="margin-top:20px">{{ icon("search") }}Find case</button>
+    {% endif %}
+  </form>
+
+{% elif by == "fir" %}
+  <form method="post" action="/find" hx-disabled-elt="find button[type=submit]" hx-disinherit="hx-disabled-elt">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="kind" value="fir">
+    {{ court_picker(True, "Courts where the case could be. The police station list comes from the first one.") }}
+    {% if courts %}
+      <label class="field"><span>Police station</span>
+        <select name="police_station" required hx-get="/find/police" hx-trigger="load, change from:#courts-fir"
+                hx-include="#courts-fir" hx-swap="innerHTML"><option value="">Loading police stations…</option></select>
+        <small>Stations of your district are listed first.</small></label>
+      <div class="row-2">
+        <label class="field"><span>FIR number</span>
+          <input type="text" name="fir_no" value="{{ form.fir_no or '' }}" inputmode="numeric" required maxlength="10" placeholder="e.g. 12"></label>
+        <label class="field"><span>FIR year</span>
+          <input type="text" name="year" value="{{ form.year or '' }}" inputmode="numeric" required maxlength="4" placeholder="e.g. 2019"></label>
+      </div>
+      <button class="btn block" type="submit" style="margin-top:20px">{{ icon("search") }}Find case</button>
+    {% endif %}
+  </form>
+
+{% else %}
+  <form method="post" action="/find" hx-disabled-elt="find button[type=submit]" hx-disinherit="hx-disabled-elt">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="kind" value="advocate">
+    <p class="lead-in">Bring in all your cases at once. eCourts lists every case under the advocate's name; you choose which to add.</p>
+    <fieldset class="field" style="margin-top:0">
+      <legend>Search by</legend>
+      <div class="seg seg-2 adv-by">
+        <label><input type="radio" name="advocate_by" value="name" {% if form.advocate_by != "bar" %}checked{% endif %}><span>Name</span></label>
+        <label><input type="radio" name="advocate_by" value="bar" {% if form.advocate_by == "bar" %}checked{% endif %}><span>Bar registration no.</span></label>
+      </div>
+    </fieldset>
+    <label class="field adv-name"><span>Your name as on eCourts</span>
+      <input type="text" name="advocate_name" value="{{ form.advocate_name or '' }}" maxlength="120" placeholder="e.g. R K Sharma" autocomplete="off">
+      <small>Part of the name works too: <i>SHARM</i> finds Sharma and Sharman.</small></label>
+    <label class="field adv-bar"><span>Bar registration number</span>
+      <input type="text" name="bar" value="{{ form.bar or '' }}" maxlength="20" placeholder="e.g. D/1234/2015" autocomplete="off">
+      <small>State code / number / year, as on your enrolment certificate.</small></label>
+    <fieldset class="field">
+      <legend>Which cases</legend>
+      <div class="seg seg-2">
+        <label><input type="radio" name="status" value="Pending" {% if form.status != "Both" %}checked{% endif %}><span>Pending only</span></label>
+        <label><input type="radio" name="status" value="Both" {% if form.status == "Both" %}checked{% endif %}><span>Pending + disposed</span></label>
+      </div>
+    </fieldset>
+    {{ court_picker(True) }}
+    {% if courts %}<button class="btn block" type="submit" style="margin-top:20px">{{ icon("search") }}Find my cases</button>{% endif %}
+  </form>
+{% endif %}
 </section>
 {% endblock %}
