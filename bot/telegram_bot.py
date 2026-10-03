@@ -60,8 +60,8 @@ HELP_TEXT = (
     "/case `<CNR>` — details of one case\n"
     "/upcoming — hearings in the next 7 days\n"
     "/help — this message\n\n"
-    "📷 *No CNR?* Send a screenshot of the case, e\\.g\\. the eCourts app's My Cases screen, "
-    "and we'll find it and offer to add it\\.\n\n"
+    "📷 *No CNR?* Send a screenshot or photo of the case, e\\.g\\. the eCourts app's My Cases screen, "
+    "and we'll find it and add it to your list\\.\n\n"
     "You'll get a weekly digest, reminders 3, 2 and 1 day before each hearing, "
     "and alerts when a new order is uploaded\\."
 )
@@ -421,7 +421,7 @@ async def photo_received(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         })
     jobs.start_job(job.id)
     await message.reply_text("📷 Got it. Reading the case details and looking them up on eCourts… "
-                             "This usually takes under a minute.")
+                             "Cases we're sure about are added to your list automatically.")
 
 
 async def add_from_screenshot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

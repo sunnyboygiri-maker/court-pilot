@@ -156,6 +156,16 @@ def engine():
     return FakeEngine()
 
 
+@pytest.fixture(autouse=True)
+def no_background_fetch(monkeypatch):
+    """Auto-added cases would queue a Celery fetch; tests have no broker."""
+    import search.add
+
+    fetched = []
+    monkeypatch.setattr(search.add, "fetch_details", lambda ids: fetched.extend(ids))
+    return fetched
+
+
 async def run(db, user, session_factory, sync_redis, engine, kind, params):
     job = await jobs.create_job(db, user, kind, params)
     await jobs.run_job(job.id, session_factory, sync_redis, engine=engine)
@@ -198,6 +208,9 @@ async def test_number_fir_and_advocate_searches(db, user, session_factory, sync_
     job = await run(db, user, session_factory, sync_redis, engine, "number",
                     {"courts": [DHORAJI], "case_type": "31^6", "number": "412", "year": 2024})
     assert job.status == "done" and ("number", "31^6", "412", 2024) in engine.calls
+    # Exactly one case for that number: added straight away
+    assert job.params["added"] == ["DLWE010004122024"] and len(job.params["added_case_ids"]) == 1
+    assert await db.scalar(select(TrackedCase).where(TrackedCase.user_id == user.id)) is not None
     job = await run(db, user, session_factory, sync_redis, engine, "fir",
                     {"courts": [DHORAJI], "police_station": "20501-11213010", "fir_no": "707", "year": 2019})
     hit = await db.scalar(select(SearchHit).where(SearchHit.job_id == job.id))
@@ -279,6 +292,23 @@ async def test_add_court_then_search_by_name(web, db, user, session_factory, syn
     assert r.status_code == 303 and re.match(r"/cases/\d+/view", r.headers["location"])
     assert len(web.fetched) == 1  # full details fetched in the background
     assert "In your list" in (await web.get(f"/find/{job_id}")).text
+
+
+async def test_case_number_is_the_default_tab_and_auto_adds(web, db, user, session_factory, sync_redis, engine):
+    db.add(UserCourt(user_id=user.id, state_code="17", state_name="Gujarat", dist_code="16", dist_name="Rajkot",
+                     complex_value="1170073@6,22,28@N", complex_name="Dhoraji"))
+    await db.commit()
+    court = await db.scalar(select(UserCourt))
+    r = await web.get("/cases/new")
+    assert "Find and add case" in r.text  # case number tab first
+    r = await web.post("/find", data={"csrf_token": CSRF, "kind": "number", "case_type": "31^6",
+                                      "number": "412/2024", "year": "", "court_ids": str(court.id)})
+    assert r.status_code == 303
+    job = await db.get(SearchJob, web.started[-1])
+    assert (job.params["number"], job.params["year"]) == ("412", 2024)  # year taken from 412/2024
+    await jobs.run_job(job.id, session_factory, sync_redis, engine=engine)
+    r = await web.get(f"/find/{job.id}")
+    assert r.status_code == 303 and re.match(r"/cases/\d+/view", r.headers["location"])
 
 
 async def test_search_form_errors(web, db, user):

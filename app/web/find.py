@@ -31,7 +31,8 @@ logger = logging.getLogger("courtpilot.web.find")
 
 router = APIRouter(include_in_schema=False)
 
-TABS = [("cnr", "CNR"), ("screenshot", "Screenshot"), ("name", "Party name"), ("number", "Case number"),
+# Lawyers mostly know the case number, so that comes first
+TABS = [("number", "Case number"), ("cnr", "CNR"), ("screenshot", "Screenshot"), ("name", "Party name"),
         ("fir", "FIR"), ("advocate", "My cases")]
 MAX_UPLOADS = 10
 DROPDOWN_TTL = 7 * 24 * 3600
@@ -86,7 +87,7 @@ async def hub_context(db: AsyncSession, user: User, by: str, **extra) -> dict:
     this_year = today_ist().year
     bar_state, bar_code, bar_year = parse_bar(user.bar_registration_no)
     ctx.update(
-        by=by if by in dict(TABS) else "cnr",
+        by=by if by in dict(TABS) else "number",
         tabs=TABS,
         courts=await my_courts(db, user),
         years=list(range(this_year, this_year - 30, -1)),
@@ -100,7 +101,7 @@ async def hub_context(db: AsyncSession, user: User, by: str, **extra) -> dict:
 
 
 @router.get("/cases/new")
-async def add_case_page(request: Request, by: str = "cnr", cnr: str = "",
+async def add_case_page(request: Request, by: str = "number", cnr: str = "",
                         user: User = Depends(get_web_user), db: AsyncSession = Depends(get_db)):
     ctx = await hub_context(db, user, by)
     ctx["form"]["cnr"] = cnr
@@ -258,7 +259,7 @@ async def start_search(
     year_to: int = Form(0),
     case_type: str = Form(""),
     number: str = Form(""),
-    year: int = Form(0),
+    year: str = Form(""),
     police_station: str = Form(""),
     fir_no: str = Form(""),
     advocate_name: str = Form(""),
@@ -269,6 +270,8 @@ async def start_search(
     db: AsyncSession = Depends(get_db),
     redis: Redis = Depends(get_redis),
 ):
+    # Empty or non-numeric year boxes are treated as "not given", never a server error
+    year = int(year) if str(year).strip().isdigit() else 0
     form = {"name": name, "other_party": other_party, "year_from": year_from, "year_to": year_to,
             "case_type": case_type, "number": number, "year": year, "police_station": police_station,
             "fir_no": fir_no, "advocate_name": advocate_name, "bar": bar, "advocate_by": advocate_by, "status": status,
@@ -284,6 +287,10 @@ async def start_search(
         if len(re.sub(r"[^A-Za-z]", "", name)) < 3:
             error = "Please type at least 3 letters of the name."
     elif kind == "number":
+        # "714/2018" or "714 / 2018" in the number box: take the year from it
+        m = re.match(r"^\s*(\d+)\s*/\s*(\d{4})\s*$", number)
+        if m:
+            number, year = m.group(1), year or int(m.group(2))
         params.update(case_type=case_type, number=re.sub(r"\D", "", number), year=year)
         if not case_type:
             error = "Please choose the case type."
@@ -386,6 +393,14 @@ async def results_page(request: Request, job_id: int, user: User = Depends(get_w
         return render(request, "web/not_found.html", ctx, status_code=404)
     await jobs.mark_stale(db, job)
     await db.refresh(job)
+    added_ids = job.params.get("added_case_ids") or []
+    if job.kind == "number" and job.status == "done" and len(added_ids) == 1:
+        # Exact case number, one result: it was added automatically; go straight to it
+        response = redirect(request, f"/cases/{added_ids[0]}/view", "Case added. We'll remind you before every hearing.")
+        if is_htmx(request):
+            response.headers["HX-Redirect"] = f"/cases/{added_ids[0]}/view"
+            response.status_code = 200
+        return response
     hits = (await db.scalars(select(SearchHit).where(SearchHit.job_id == job.id)
                              .order_by(SearchHit.score.desc(), SearchHit.case_number))).all()
     tracked = set((await db.scalars(

@@ -22,6 +22,13 @@ CSRF = "test-csrf-token"
 
 
 @pytest.fixture(autouse=True)
+def no_background_fetch(monkeypatch):
+    import search.add
+
+    monkeypatch.setattr(search.add, "fetch_details", lambda ids: None)
+
+
+@pytest.fixture(autouse=True)
 def bot_db(monkeypatch, session_factory):
     """Bot handlers open their own sessions: point them at the test database."""
     monkeypatch.setattr(tb, "SessionLocal", session_factory)
@@ -185,10 +192,34 @@ async def test_results_message_and_buttons(db, user, session_factory, sync_redis
     job = await run_screenshot(db, user, session_factory, sync_redis, reads, monkeypatch, telegram_chat_id="555",
                                courts=[{"state_code": "26", "dist_code": "6", "complex_value": "1260006@1,2@Y", "name": "Dwarka"}])
     chat, text, markup = sent[0]
-    assert chat == "555" and "Found 2 cases" in text
+    assert chat == "555" and "Added 2 cases" in text  # both matches were sure: added without asking
     assert_valid_markdown_v2(text)
-    data = [b["callback_data"] for row in markup["inline_keyboard"] for b in row if "callback_data" in b]
-    assert f"fa:{job.id}:all" in data and len(data) == 3
+    # Nothing left to confirm: no Add buttons (just the website link)
+    assert not [b for row in (markup or {}).get("inline_keyboard", []) for b in row if "callback_data" in b]
+    assert len((await db.scalars(select(TrackedCase).where(TrackedCase.user_id == user.id))).all()) == 2
+
+
+async def test_unsure_match_waits_for_a_tap(db, user, session_factory, sync_redis, monkeypatch):
+    sent = []
+
+    async def fake_send(chat_id, text, parse_mode="MarkdownV2", reply_markup=None):
+        sent.append((text, reply_markup))
+
+    import search.telegram_reply as tr
+
+    monkeypatch.setattr(tr, "send_telegram_message", fake_send)
+    # Right court and number, but only one of the screenshot's parties matches
+    read = ReadCase(court_header="Chief Metropolitan Magistrate, West, THC,West", case_type="Cr. Case",
+                    number="65303", year="2016", petitioner="NARESH PAL SHARMA", respondent="OM PRAKASH")
+    db.add(UserCourt(user_id=user.id, state_code="26", state_name="Delhi", dist_code="8", dist_name="West",
+                     complex_value="1260001@1,2@Y", complex_name="Tis Hazari"))
+    await db.commit()
+    job = await run_screenshot(db, user, session_factory, sync_redis, [read], monkeypatch, telegram_chat_id="555",
+                               courts=[{"state_code": "26", "dist_code": "8", "complex_value": "1260001@1,2@Y", "name": "Tis Hazari"}])
+    text, markup = sent[0]
+    assert "Please check" in text and not job.params.get("added")
+    assert_valid_markdown_v2(text)
+    assert markup["inline_keyboard"][0][0]["callback_data"].startswith(f"fa:{job.id}:")
 
 
 async def test_bot_photo_starts_a_search(db, user, redis, monkeypatch):
@@ -205,7 +236,7 @@ async def test_bot_photo_starts_a_search(db, user, redis, monkeypatch):
     update.effective_message.photo = [photo]
     update.effective_message.document = None
     await tb.photo_received(update, ctx)
-    assert started and "Reading the case details" in replies(update)[0]
+    assert started and "added to your list automatically" in replies(update)[0]
     job = await db.get(SearchJob, started[0])
     assert job.kind == "screenshot" and job.params["telegram_chat_id"] == "555"
     assert await redis.get(f"img:{job.params['images'][0]}")

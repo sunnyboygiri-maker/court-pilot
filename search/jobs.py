@@ -263,6 +263,43 @@ async def run_job(job_id: int, session_factory: Callable, redis, engine: Optiona
                 job.error = "eCourts isn't responding right now. Please try again in a few minutes."
         job.finished_at = utcnow()
         await db.commit()
+        if job.kind == "number" and job.status == "done":
+            await auto_add(db, job)
+
+
+AUTO_ADD_SCORE = 0.88  # screenshot matches this sure are added without asking
+
+
+async def auto_add(db: AsyncSession, job: SearchJob) -> None:
+    """
+    Add the cases a search is sure about straight to the lawyer's list:
+    a case-number search with exactly one result, or screenshot matches whose
+    parties agree (or that showed a CNR). Anything less sure waits for a tap.
+    """
+    from search.add import add_hits, fetch_details
+
+    hits = (await db.scalars(select(SearchHit).where(SearchHit.job_id == job.id))).all()
+    if job.kind == "number":
+        sure = list(hits) if len(hits) == 1 else []
+    else:
+        found_per_read = [r.get("found") or [] for r in job.params.get("read", [])]
+        single = {cnrs[0] for cnrs in found_per_read if len(cnrs) == 1}
+        sure = [h for h in hits if h.cnr_number in single and h.score >= AUTO_ADD_SCORE]
+    if not sure:
+        return
+    user = await db.get(User, job.user_id)
+    result = await add_hits(db, user, sure)
+    fetch_details(result.new_case_ids)
+    from models.database import CourtCase
+
+    in_list = result.added + result.already
+    params = dict(job.params)
+    params["added"] = list((await db.scalars(select(CourtCase.cnr_number).where(CourtCase.id.in_(in_list)))).all())
+    params["added_case_ids"] = result.added
+    params["over_limit"] = result.over_limit
+    job.params = params
+    flag_modified(job, "params")
+    await db.commit()
 
 
 def start_job(job_id: int) -> None:
@@ -450,18 +487,25 @@ async def run_screenshot_job(db: AsyncSession, job: SearchJob, redis, engine: Di
         await db.commit()
     job.status, job.finished_at = "done", utcnow()
     await db.commit()
+    await auto_add(db, job)
     await _notify_telegram(db, job)
 
 
 async def _notify_telegram(db: AsyncSession, job: SearchJob) -> None:
-    """Screenshots sent on Telegram get their answer there, with Add buttons."""
+    """Screenshots sent on Telegram or WhatsApp get their answer there."""
     chat_id = job.params.get("telegram_chat_id")
-    if not chat_id:
+    wa_to = job.params.get("whatsapp_to")
+    if not (chat_id or wa_to):
         return
-    from search.telegram_reply import send_results
+    from search.telegram_reply import send_results, whatsapp_text
 
     hits = (await db.scalars(select(SearchHit).where(SearchHit.job_id == job.id).order_by(SearchHit.id))).all()
     try:
-        await send_results(chat_id, job, list(hits))
+        if chat_id:
+            await send_results(chat_id, job, list(hits))
+        if wa_to:
+            from notifications.whatsapp import send_whatsapp_text
+
+            await send_whatsapp_text(wa_to, whatsapp_text(job, list(hits)))
     except Exception:
-        logger.exception("Couldn't send screenshot results to Telegram")
+        logger.exception("Couldn't send screenshot results back to the lawyer")

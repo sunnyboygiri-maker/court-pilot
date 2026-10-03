@@ -44,6 +44,11 @@ class Settings(BaseSettings):
     WHATSAPP_ACCESS_TOKEN: str = ""
     WHATSAPP_TEMPLATE_LANGUAGE: str = "en"
     WHATSAPP_COST_PER_MESSAGE_INR: float = 0.80
+    # Receiving WhatsApp messages (screenshots): Meta calls POST /webhook/whatsapp.
+    # VERIFY_TOKEN is any secret you also type into Meta's webhook setup; APP_SECRET
+    # is the Meta app's secret, used to check each delivery really came from Meta.
+    WHATSAPP_VERIFY_TOKEN: str = ""
+    WHATSAPP_APP_SECRET: str = ""
 
     # Email (SMTP)
     SMTP_HOST: str = "smtp.gmail.com"

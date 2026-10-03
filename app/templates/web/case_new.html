@@ -144,11 +144,13 @@
                 hx-include="#courts-number" hx-swap="innerHTML"><option value="">Loading case types…</option></select></label>
       <div class="row-2">
         <label class="field"><span>Case number</span>
-          <input type="text" name="number" value="{{ form.number or '' }}" inputmode="numeric" required maxlength="10" placeholder="e.g. 412"></label>
+          <input type="text" name="number" value="{{ form.number or '' }}" inputmode="numeric" required maxlength="12" placeholder="e.g. 714 or 714/2018" autofocus></label>
         <label class="field"><span>Year</span>
-          <input type="text" name="year" value="{{ form.year or '' }}" inputmode="numeric" required maxlength="4" placeholder="e.g. 2024"></label>
+          <input type="text" name="year" value="{{ form.year or '' }}" inputmode="numeric" maxlength="4" placeholder="e.g. 2018">
+          <small>Not needed if you typed 714/2018.</small></label>
       </div>
-      <button class="btn block" type="submit" style="margin-top:20px">{{ icon("search") }}Find case</button>
+      <button class="btn block" type="submit" style="margin-top:20px">{{ icon("plus") }}Find and add case</button>
+      <p class="hint" style="text-align:center">If eCourts has exactly this case, it's added to your list straight away.</p>
     {% endif %}
   </form>
 
