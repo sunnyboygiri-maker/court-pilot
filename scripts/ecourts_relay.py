@@ -87,12 +87,15 @@ async def handle(client_r: asyncio.StreamReader, client_w: asyncio.StreamWriter)
 
 
 def tailscale_ip() -> str:
-    try:
-        out = subprocess.run(["tailscale", "ip", "-4"], capture_output=True, text=True, timeout=10)
-        ip = out.stdout.strip().splitlines()[0] if out.returncode == 0 and out.stdout.strip() else ""
-        return ip
-    except Exception:
-        return ""
+    # Right after installing, Tailscale may not be on PATH yet: try the default install location too
+    for exe in ("tailscale", r"C:\Program Files\Tailscale\tailscale.exe"):
+        try:
+            out = subprocess.run([exe, "ip", "-4"], capture_output=True, text=True, timeout=10)
+        except Exception:
+            continue
+        if out.returncode == 0 and out.stdout.strip():
+            return out.stdout.strip().splitlines()[0]
+    return ""
 
 
 async def main() -> None:
