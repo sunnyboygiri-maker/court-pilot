@@ -98,6 +98,7 @@ async def get_or_fetch_case(db: AsyncSession, cnr: str, scraper: ECourtsScraper)
 
     court_case = CourtCase(cnr_number=cnr)
     apply_case_data(court_case, data)
+    court_case.court_ref = data.get("court_ref")
     court_case.last_polled_at = utcnow()
     db.add(court_case)
     try:
@@ -105,7 +106,11 @@ async def get_or_fetch_case(db: AsyncSession, cnr: str, scraper: ECourtsScraper)
     except IntegrityError:
         # Another user added the same CNR while we were scraping
         await db.rollback()
-        court_case = await db.scalar(select(CourtCase).where(CourtCase.cnr_number == cnr))
+        return await db.scalar(select(CourtCase).where(CourtCase.cnr_number == cnr))
+    from scraper.extras import needs_enrich, request_enrich
+
+    if needs_enrich(court_case, None, set()):
+        request_enrich(court_case.id)  # judge's name and the latest order's text, in the background
     return court_case
 
 

@@ -96,10 +96,15 @@ async def _fetch_inline(case_ids: list[int]) -> None:
     from models.session import SessionLocal
     from workers.tasks.poll_cases import poll_one
 
+    from scraper.extras import enrich_case
+    from workers.redis_client import get_sync_redis
+
     scraper = service.get_scraper()
     for case_id in case_ids:
         try:
             async with SessionLocal() as db:
-                await poll_one(db, case_id, scraper)
+                result = await poll_one(db, case_id, scraper)
+                if result is not None and result.needs_enrich:
+                    await enrich_case(db, case_id, get_sync_redis())
         except Exception:
             logger.exception("First fetch failed for case %s", case_id)

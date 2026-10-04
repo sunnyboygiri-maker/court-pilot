@@ -456,6 +456,34 @@ async def add_from_screenshot(update: Update, context: ContextTypes.DEFAULT_TYPE
     await update.effective_message.reply_text(" ".join(parts) or "Nothing to add.")
 
 
+async def remove_added_case(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Undo for a case a screenshot added automatically ("❌ Remove" under the reply)."""
+    from app.cases import service
+    from models.database import CourtCase, SearchJob
+
+    query = update.callback_query
+    await query.answer()
+    _, job_id, case_id = query.data.split(":")
+    async with SessionLocal() as db:
+        user = await _require_user(update, db)
+        if not user:
+            return
+        job = await db.get(SearchJob, int(job_id))
+        # Only cases this job added for this user can be removed from here
+        if job is None or job.user_id != user.id or int(case_id) not in (job.params.get("added_case_ids") or []):
+            return
+        court_case = await db.get(CourtCase, int(case_id))
+        try:
+            await service.untrack_case(db, user.id, int(case_id))
+        except service.CaseNotFound:
+            await update.effective_message.reply_text("That case is no longer in your list.")
+            return
+    label = " ".join(x for x in (court_case.case_type, court_case.case_number) if x) if court_case else "The case"
+    await update.effective_message.reply_text(
+        f"Removed {label or court_case.cnr_number}. Send the eCourts Case History screen (it shows the CNR) "
+        "for an exact match.")
+
+
 async def text_fallback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Plain messages used to be ignored silently; always answer with the next step."""
     text = (update.effective_message.text or "").strip()
@@ -508,6 +536,7 @@ def build_application(token: Optional[str] = None) -> Application:
     application.add_handler(MessageHandler(filters.CONTACT, contact_received))
     application.add_handler(MessageHandler(filters.PHOTO | filters.Document.IMAGE, photo_received))
     application.add_handler(CallbackQueryHandler(add_from_screenshot, pattern=r"^fa:\d+:(\d+|all)$"))
+    application.add_handler(CallbackQueryHandler(remove_added_case, pattern=r"^rm:\d+:\d+$"))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_fallback))
     application.add_handler(CallbackQueryHandler(case_button, pattern=r"^case:\d+$"))
     application.add_error_handler(on_error)

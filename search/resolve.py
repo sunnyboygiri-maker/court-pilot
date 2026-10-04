@@ -152,13 +152,21 @@ async def candidate_sections(engine, redis, read: ReadCase, state_codes: list[st
 
 async def resolve(engine: DistrictSearch, redis, read: ReadCase, state_codes: list[str],
                   my_courts: list[dict], places: Optional[list[tuple[str, str]]] = None) -> tuple[list[Hit], Optional[dict]]:
-    """The eCourts case(s) a screenshot shows, and the court section they were found in."""
+    """
+    Every eCourts case the screenshot could be, and the court section of the first.
+
+    All candidate sections are tried, not just until the first match: the same
+    type/number/year exists in several courts, and one match found early isn't
+    proof there isn't another. Each hit carries its section in extra["section"].
+    """
     if read.cnr:
         return [Hit(cnr_number=read.cnr, case_type=read.case_type, case_number=read.label() if read.number else "",
                     petitioner=read.petitioner, respondent=read.respondent)], None
     if not (read.number and read.year and read.case_type):
         return [], None
     tried: set[tuple] = set()
+    found: dict[str, Hit] = {}
+    first: Optional[dict] = None
 
     async def try_section(sec: dict, exact_only: bool = False) -> list[Hit]:
         c = sec["court"]
@@ -177,24 +185,106 @@ async def resolve(engine: DistrictSearch, redis, read: ReadCase, state_codes: li
             hits = await engine.case_number(court, code, read.number, int(read.year))
             for h in hits:
                 h.court_name = h.court_name or sec["name"]
+                h.extra["section"] = sec
             good = [h for h in hits if (parties_score(read, h) or 1.0) >= 0.6]
             if good:
                 return good
         return []
 
+    async def collect(sec: dict, exact_only: bool = False) -> None:
+        nonlocal first
+        for h in await try_section(sec, exact_only):
+            found.setdefault(h.cnr_number, h)
+            first = first or sec
+
     for sec in await candidate_sections(engine, redis, read, state_codes, my_courts):
-        hits = await try_section(sec)
-        if hits:
-            return hits, sec
-    if not read.court_header and places:
+        await collect(sec)
+    if not found and not read.court_header and places:
         # Court not on the screenshot: every section of the lawyer's districts
         # that has exactly this case type (e.g. "CS DJ ADJ" exists only at District Judge level)
         for sec in (await lawyer_sections(engine, redis, places))[:MAX_FALLBACK_SECTIONS]:
             try:
-                hits = await try_section(sec, exact_only=True)
+                await collect(sec, exact_only=True)
             except Exception:
                 logger.warning("Lookup failed in %s", sec.get("name"))
-                continue
-            if hits:
-                return hits, sec
-    return [], None
+    return list(found.values()), first
+
+
+# --- Checking a candidate against its full eCourts record ---
+
+def _read_date(text: str):
+    """"27-10-2026" or the My Cases column's "Oct 27 2026" -> date."""
+    from datetime import date
+
+    from search.screenshot import DATE_RE, MONTHS
+
+    m = DATE_RE.search(text or "")
+    try:
+        if m:
+            return date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
+        bits = (text or "").split()
+        month = next((MONTHS[b[:3].title()] for b in bits if b[:3].title() in MONTHS), None)
+        nums = [int(b) for b in bits if b.isdigit()]
+        year = next((n for n in nums if n > 1900), None)
+        day = next((n for n in nums if n <= 31), None)
+        if month and year and day:
+            return date(year, month, day)
+    except ValueError:
+        pass
+    return None
+
+
+def _number_year(case_number: str) -> tuple[str, str]:
+    nums = re.findall(r"\d+", case_number or "")
+    return (nums[-2].lstrip("0"), nums[-1]) if len(nums) >= 2 else ("", "")
+
+
+def verify(read: ReadCase, data: dict) -> dict:
+    """
+    Compare what the screenshot says with the case's full record.
+
+    Each check is True (agrees), False (contradicts) or absent (nothing to
+    compare). Sure = no contradiction and at least one independent agreement
+    (a CNR on the screenshot counts as one). A misread digit lands on a sibling
+    case with the same parties, so parties alone only count when they aren't
+    "State" and the hearing dates don't disagree.
+    """
+    from scraper.persist import parse_date
+
+    checks: dict[str, bool] = {}
+    if read.number and read.year:
+        num, year = _number_year(data.get("case_number") or "")
+        if num:
+            checks["number"] = (num, year) == (read.number.lstrip("0"), read.year)
+    seen_date = _read_date(read.next_date)
+    if seen_date:
+        raw = data.get("raw_data") or {}
+        known = {parse_date(data.get("next_hearing_date"))}
+        for h in raw.get("history") or []:
+            known |= {parse_date(h.get("hearing_date")), parse_date(h.get("business_date"))}
+        checks["date"] = seen_date in known
+    sides = [p for p in (read.petitioner, read.respondent) if p and not _generic(p)]
+    if sides:
+        score = parties_score(read, Hit(cnr_number="", petitioner=data.get("petitioner") or "",
+                                        respondent=data.get("respondent") or ""))
+        if score is not None and score >= 0.88:
+            checks["parties"] = True
+        elif score is not None and score < 0.6:
+            checks["parties"] = False
+    contradicted = any(v is False for v in checks.values())
+    if read.cnr:
+        sure = not contradicted
+    else:
+        sure = not contradicted and (checks.get("date") is True or checks.get("parties") is True)
+    return {
+        "sure": sure,
+        "checks": checks,
+        "next_date": data.get("next_hearing_date"),
+        "stage": data.get("stage"),
+        "court": data.get("court_name"),
+        "judge": data.get("judge"),
+        "petitioner": data.get("petitioner"),
+        "respondent": data.get("respondent"),
+        "case_number": data.get("case_number"),
+        "case_type": data.get("case_type"),
+    }

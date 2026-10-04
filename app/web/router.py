@@ -43,8 +43,8 @@ from app.web.session import (
 from config.settings import settings
 from config.timeutils import today_ist
 from models.database import (
-    PLAN_LIMITS, WHATSAPP_ADDON_PRICE, CaseSnapshot, CaseStatus, CourtCase, PlanTier, TrackedCase, User,
-    UserCourt,
+    PLAN_LIMITS, WHATSAPP_ADDON_PRICE, CaseSnapshot, CaseStatus, CauseListing, CourtCase, CourtType, OrderDocument,
+    PlanTier, TrackedCase, User, UserCourt,
 )
 from models.session import get_db
 from notifications.sms import sms_configured
@@ -520,17 +520,28 @@ async def _case_page(request: Request, db: AsyncSession, user: User, case_id: in
     snapshots = (
         await db.scalars(select(CaseSnapshot).where(CaseSnapshot.case_id == c.id).order_by(CaseSnapshot.captured_at))
     ).all()
-    orders = sorted(c.orders_json or [], key=lambda o: str(o.get("date") or ""), reverse=True)
+    orders = sorted(c.orders_json or [], key=lambda o: (str(o.get("date") or ""), _order_no(o)), reverse=True)
     for o in orders:
         d = parse_date(o.get("date"))
         o["label"] = fmt_date(d) if d else (o.get("date") or "Date not given")
-        o["safe_link"] = o.get("link") if str(o.get("link") or "").startswith(("https://", "http://")) else None
+        if str(o.get("link") or "").startswith(("https://", "http://")):
+            o["safe_link"] = o["link"]
+        elif o.get("number"):
+            # District orders open through us (eCourts' own links only work inside its page)
+            o["safe_link"] = f"/cases/{c.id}/orders/{o['number']}.pdf"
+        else:
+            o["safe_link"] = None
+    latest = orders[0] if orders else None
+    listing = await _cause_listing(db, c, today)
     ctx = await page_context(db, user, "cases")
     ctx.update(
         c=card(tracked, today),
         case=c,
         tracked=tracked,
         orders=orders,
+        latest=latest,
+        latest_text=_order_preview(c.latest_order_text) if latest else None,
+        listing=listing,
         timeline=build_timeline(c, list(snapshots)),
         ecourts_url=ecourts_link(c),
         priorities=PRIORITIES,
@@ -540,6 +551,92 @@ async def _case_page(request: Request, db: AsyncSession, user: User, case_id: in
     )
     ctx.update(extra)
     return render(request, "web/case_detail.html", ctx)
+
+
+def _order_no(o: dict) -> int:
+    n = str(o.get("number") or "")
+    return int(n) if n.isdigit() else 0
+
+
+def _order_preview(text: Optional[str]) -> Optional[dict]:
+    """The latest order's text, with the opening lines shown and the rest behind "Read full order"."""
+    if not text:
+        return None
+    lines = text.splitlines()
+    return {"head": "\n".join(lines[:8]), "rest": "\n".join(lines[8:])}
+
+
+CAUSE_LIST_RECHECK = 2 * 3600
+
+
+async def _cause_listing(db: AsyncSession, c: CourtCase, today) -> Optional[dict]:
+    """The cause list for the next hearing, if it's today or tomorrow (looked for on demand when missing)."""
+    day = c.next_hearing_date
+    if not day or not (today <= day <= today + timedelta(days=1)) or c.court_type == CourtType.HIGH_COURT:
+        return None
+    row = await db.scalar(select(CauseListing).where(CauseListing.case_id == c.id, CauseListing.listing_date == day))
+    if row is None and c.court_ref:
+        from app.redis import get_redis as _redis
+
+        try:
+            if await _redis().set(f"cl-asked:{c.id}:{day}", 1, nx=True, ex=CAUSE_LIST_RECHECK):
+                from scraper.extras import request_cause_list
+
+                request_cause_list(c.id)
+        except Exception:
+            logger.warning("Couldn't ask for the cause list of case %s", c.id)
+    return {"day": day, "row": row, "tracked_court": bool(c.court_ref)}
+
+
+ORDER_FETCHES_PER_HOUR = 30
+ORDER_FETCH_TIMEOUT = 90
+
+
+@router.get("/cases/{case_id}/orders/{number}.pdf")
+async def order_pdf(request: Request, case_id: int, number: str, user: User = Depends(get_web_user),
+                    db: AsyncSession = Depends(get_db), redis: Redis = Depends(get_redis)):
+    """An order's PDF: from our store, else fetched from eCourts (a few seconds) and kept."""
+    import asyncio
+
+    from fastapi.responses import Response
+
+    from scraper.extras import fetch_order
+
+    try:
+        tracked = await service.get_tracked(db, user.id, case_id)
+    except service.CaseNotFound:
+        ctx = await page_context(db, user, "cases")
+        return render(request, "web/not_found.html", ctx, status_code=404)
+    c = tracked.court_case
+    if not number.isdigit():
+        return redirect(request, f"/cases/{case_id}/view", "That order wasn't found.")
+    doc = await db.scalar(select(OrderDocument).where(OrderDocument.case_id == c.id, OrderDocument.number == number))
+    if doc is None:
+        key = f"order-fetch:{user.id}:{utcnow_hour()}"
+        count = await redis.incr(key)
+        await redis.expire(key, 3600)
+        if count > ORDER_FETCHES_PER_HOUR:
+            return redirect(request, f"/cases/{case_id}/view",
+                            "You've opened many new orders this hour. Please try again a little later.")
+        try:
+            doc = await asyncio.wait_for(fetch_order(db, c, number), ORDER_FETCH_TIMEOUT)
+        except Exception:
+            logger.warning("Order %s of %s couldn't be fetched", number, c.cnr_number)
+            doc = None
+        if doc is None:
+            return redirect(request, f"/cases/{case_id}/view",
+                            "eCourts didn't send that order just now. Please try again in a minute.")
+    return Response(doc.pdf, media_type="application/pdf", headers={
+        "Content-Disposition": f'inline; filename="order-{c.cnr_number}-{number}.pdf"',
+        "Cache-Control": "private, max-age=86400",
+        "X-Content-Type-Options": "nosniff",
+    })
+
+
+def utcnow_hour() -> str:
+    from config.timeutils import utcnow
+
+    return utcnow().strftime("%Y%m%d%H")
 
 
 @router.get("/cases/{case_id}/view")

@@ -79,6 +79,13 @@ from models.session import sync_database_url  # noqa: E402
 
 eng = create_engine(sync_database_url(db_uri))
 Base.metadata.create_all(eng)
+# create_all doesn't add columns to tables an older preview already made (the server uses Alembic)
+from sqlalchemy import text  # noqa: E402
+
+with eng.begin() as conn:
+    for table, column, kind in [("court_cases", "judge_name", "VARCHAR(255)"), ("court_cases", "court_ref", "JSON"),
+                                ("court_cases", "latest_order_text", "TEXT"), ("search_hits", "details", "JSON")]:
+        conn.execute(text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {kind}"))
 today = date.today()
 ecourts = "https://services.ecourts.gov.in/"
 

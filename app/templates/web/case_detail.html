@@ -15,12 +15,53 @@
 </div>
 
 <div class="stack">
+  {% if latest %}
+  <section class="card latest-order">
+    <div class="card-head">
+      <h2>Latest order</h2>
+      <span class="hint" style="margin:0">{{ latest.label }}{% if latest.description %} · {{ latest.description }}{% endif %}</span>
+    </div>
+    {% if latest_text %}
+      <div class="order-text">{{ latest_text.head }}</div>
+      {% if latest_text.rest %}
+        <details class="more">
+          <summary class="btn ghost">Read full order</summary>
+          <div class="order-text">{{ latest_text.rest }}</div>
+        </details>
+      {% endif %}
+    {% elif latest.number %}
+      <p class="hint" style="margin:0">We're reading this order from eCourts. Its text will appear here shortly.</p>
+    {% endif %}
+    {% if latest.safe_link %}
+      <div class="btn-row" style="margin-top:12px">
+        <a class="btn secondary" href="{{ latest.safe_link }}" target="_blank" rel="noopener" hx-boost="false">{{ icon("file") }}Open PDF</a>
+      </div>
+    {% endif %}
+  </section>
+  {% endif %}
+
   <section class="card next-hearing {{ 'today' if c.days == 0 }}">
     <h2>Next hearing</h2>
     {% if case.next_hearing_date and not c.disposed %}
       <div class="big">{{ fmt_date(case.next_hearing_date) }}</div>
       <div class="rel">{{ c.when }}</div>
       <p>{{ case.stage or "" }}{% if case.stage and case.court_name %} · {% endif %}{{ case.court_name or "" }}</p>
+      {% if case.judge_name %}<p style="margin-top:4px">Before {{ case.judge_name }}</p>{% endif %}
+      {% if listing %}
+        <div class="cause-list">
+          {% if listing.row and listing.row.serial %}
+            <b>Cause list, {{ fmt_date(listing.day) }}: item {{ listing.row.serial }}</b>
+            <span>{{ listing.row.purpose or "" }}{% if listing.row.purpose and listing.row.category %} · {% endif %}{{ listing.row.category or "" }}</span>
+            {% if listing.row.vc_url %}<a class="btn secondary" href="{{ listing.row.vc_url }}" target="_blank" rel="noopener" hx-boost="false">Join VC {{ icon("external") }}</a>{% endif %}
+          {% elif listing.row %}
+            <b>Cause list, {{ fmt_date(listing.day) }}</b>
+            <span>This case isn't on the court's published list. Please check with the court.</span>
+          {% elif listing.tracked_court %}
+            <b>Cause list, {{ fmt_date(listing.day) }}</b>
+            <span>Not published yet. We check in the evening and early morning.</span>
+          {% endif %}
+        </div>
+      {% endif %}
     {% elif c.disposed %}
       <div class="rel">This case has been disposed.</div>
     {% else %}
@@ -38,7 +79,7 @@
       {% if case.respondent_advocate %}<div><dt>Respondent's advocate</dt><dd>{{ case.respondent_advocate }}</dd></div>{% endif %}
       <div><dt>Court</dt><dd>{{ case.court_name or "Not listed" }}{% if case.court_complex %}<br><span class="hint" style="margin:0">{{ case.court_complex }}</span>{% endif %}</dd></div>
       {% if case.bench %}<div><dt>Bench</dt><dd>{{ case.bench }}</dd></div>{% endif %}
-      <div><dt>Judge</dt><dd>{{ case.judge or "Not listed" }}</dd></div>
+      <div><dt>Judge</dt><dd>{% if case.judge_name %}{{ case.judge_name }}{% if case.judge %}<br><span class="hint" style="margin:0">{{ case.judge }}</span>{% endif %}{% else %}{{ case.judge or "Not listed" }}{% endif %}</dd></div>
       <div><dt>Stage</dt><dd>{{ case.stage or "Not listed" }}</dd></div>
       {% if case.acts_sections %}
         <div><dt>Acts</dt><dd>{% for a in case.acts_sections %}{{ a.act }}{% if a.section %}, section {{ a.section }}{% endif %}{% if not loop.last %}<br>{% endif %}{% endfor %}</dd></div>

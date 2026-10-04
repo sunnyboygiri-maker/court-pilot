@@ -17,6 +17,9 @@ beautifulsoup4==4.12.3
 
 # Reading case details from screenshots: free, open source, runs on our server
 rapidocr==3.9.2
+# Order PDFs: text layer, and page images to OCR when an order is scanned
+pypdf==6.19.0
+pypdfium2==5.13.0
 
 # Task queue
 celery==5.4.0

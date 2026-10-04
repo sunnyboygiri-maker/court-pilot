@@ -240,5 +240,15 @@ class DistrictSearch:
             result = await c._post_ajax("casestatus/fillPoliceStation", self._base(court, court.establishments[0]))
             return _options(result.get("police_station_list", ""))
 
+    async def case_details(self, cnr: str) -> dict:
+        """The full eCourts record of one case (as the poller stores it), to check a screenshot match against."""
+        from scraper.ecourts import ECourtsScraper
+
+        scraper = ECourtsScraper()
+        try:
+            return await scraper.fetch_case_by_cnr(cnr)
+        finally:
+            await scraper.close()
+
 
 __all__ = ["Court", "Hit", "DistrictSearch", "SearchUnavailable", "parse_results", "parse_option_tags"]

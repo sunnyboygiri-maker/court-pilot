@@ -339,6 +339,10 @@ form.htmx-request .progress, form.busy .progress { display: block; }
 .next-hearing { background: var(--accent-soft); border-color: transparent; }
 .next-hearing.today { background: var(--today-soft); }
 .next-hearing .big { font-size: 1.6rem; font-weight: 800; color: var(--accent); line-height: 1.2; }
+.next-hearing .cause-list { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line, rgba(0,0,0,.08)); display: grid; gap: 4px; }
+.next-hearing .cause-list .btn { justify-self: start; margin-top: 6px; }
+.latest-order .order-text { white-space: pre-line; line-height: 1.5; overflow-wrap: anywhere; }
+.latest-order details.more .order-text { margin-top: 8px; }
 .next-hearing.today .big { color: var(--today); }
 .next-hearing .rel { font-weight: 700; margin-top: 2px; }
 .next-hearing .rel + p { color: var(--muted); margin-top: 2px; }

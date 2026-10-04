@@ -5,7 +5,7 @@ import enum
 from datetime import datetime, date
 from sqlalchemy import (
     Column, Integer, String, Text, Boolean, DateTime, Date,
-    ForeignKey, Enum, JSON, Index, UniqueConstraint, Float
+    ForeignKey, Enum, JSON, Index, UniqueConstraint, Float, LargeBinary
 )
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.sql import func
@@ -126,13 +126,17 @@ class CourtCase(Base):
     next_hearing_date = Column(Date, nullable=True, index=True)
     previous_hearing_date = Column(Date, nullable=True)
     stage = Column(String(255), nullable=True)  # e.g. "Evidence", "Arguments"
-    judge = Column(String(255), nullable=True)
+    judge = Column(String(255), nullable=True)  # eCourts' court line: "802-JUDICIAL MAGISTRATE FIRST CLASS - 11"
+    judge_name = Column(String(255), nullable=True)  # the presiding officer, from the cause-list court list
+    # District courts: {"state_code", "dist_code", "est_code", "court_no"} of the court hearing it
+    court_ref = Column(JSON, nullable=True)
     # Acts & sections
     acts_sections = Column(JSON, nullable=True)  # [{"act": "...", "section": "..."}]
     # Orders
     latest_order_date = Column(Date, nullable=True)
     latest_order_link = Column(Text, nullable=True)
-    orders_json = Column(JSON, nullable=True)  # [{date, link, description}]
+    orders_json = Column(JSON, nullable=True)  # [{date, link, description}] (district: number instead of link)
+    latest_order_text = Column(Text, nullable=True)  # text of the newest order's PDF
     # Raw data
     raw_ecourts_data = Column(JSON, nullable=True)
     ecourts_url = Column(Text, nullable=True)
@@ -315,10 +319,44 @@ class SearchHit(Base):
     court_name = Column(String(255), nullable=True)
     score = Column(Float, nullable=False, default=1.0)
     source = Column(String(20), nullable=False, default="ecourts")  # ecourts | index
+    # Screenshot checks against the full eCourts record: {"sure", "checks", "next_date", "stage", "judge"}
+    details = Column(JSON, nullable=True)
 
     job = relationship("SearchJob", back_populates="hits")
 
     __table_args__ = (UniqueConstraint("job_id", "cnr_number", name="uq_search_hit"),)
+
+
+class OrderDocument(Base):
+    """An order's PDF and its text, kept once fetched (orders never change)."""
+    __tablename__ = "order_documents"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    case_id = Column(Integer, ForeignKey("court_cases.id", ondelete="CASCADE"), nullable=False, index=True)
+    number = Column(String(20), nullable=False)
+    order_date = Column(Date, nullable=True)
+    pdf = Column(LargeBinary, nullable=False)
+    text = Column(Text, nullable=True)
+    fetched_at = Column(DateTime, server_default=func.now())
+
+    __table_args__ = (UniqueConstraint("case_id", "number", name="uq_order_document"),)
+
+
+class CauseListing(Base):
+    """Where a tracked case appears in its court's cause list for a day."""
+    __tablename__ = "cause_listings"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    case_id = Column(Integer, ForeignKey("court_cases.id", ondelete="CASCADE"), nullable=False, index=True)
+    listing_date = Column(Date, nullable=False)
+    serial = Column(Integer, nullable=True)  # None: list published, case not on it
+    purpose = Column(String(255), nullable=True)
+    category = Column(String(255), nullable=True)
+    judge = Column(String(255), nullable=True)
+    vc_url = Column(Text, nullable=True)
+    fetched_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (UniqueConstraint("case_id", "listing_date", name="uq_cause_listing"),)
 
 
 # --- Plan limits lookup ---

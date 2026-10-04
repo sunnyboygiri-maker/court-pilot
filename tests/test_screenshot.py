@@ -68,11 +68,31 @@ def test_reads_cnr_anywhere_and_generic_text():
 
 # --- Matching the court and finding the case ---
 
+# Full eCourts records the screenshot matches are checked against (hearing dates match the fixtures)
+RECORDS = {
+    "DLWT020142452016": {"case_number": "65303/2016", "case_type": "Cr. Case", "next_hearing_date": "2026-10-27",
+                         "petitioner": "STATE", "respondent": "NARESH PAL SHARMA", "stage": "Arguments",
+                         "court_name": "Chief Metropolitan Magistrate, West, THC",
+                         "raw_data": {"history": [{"hearing_date": "2026-08-14", "business_date": "2026-06-05"}]}},
+    "DLSW010079232021": {"case_number": "812/2021", "case_type": "CS DJ ADJ", "next_hearing_date": "2026-02-21",
+                         "petitioner": "RAHUL VERMA", "respondent": "MAHESH SINGH GILL", "stage": "Evidence",
+                         "raw_data": {"history": []}},
+}
+
+
 class Engine:
     """eCourts as seen by search.resolve: two Delhi districts, one split complex."""
 
-    def __init__(self):
+    def __init__(self, records=None):
         self.searched = []
+        self.records = RECORDS if records is None else records
+        self.checked = []
+
+    async def case_details(self, cnr):
+        self.checked.append(cnr)
+        if cnr not in self.records:
+            raise LookupError("not found")
+        return self.records[cnr]
 
     async def districts(self, state):
         return {"8": "WEST", "6": "SOUTH WEST"}
@@ -145,11 +165,11 @@ def test_case_type_matching():
 
 # --- The search job ---
 
-async def run_screenshot(db, user, session_factory, sync_redis, reads, monkeypatch, **params):
+async def run_screenshot(db, user, session_factory, sync_redis, reads, monkeypatch, engine=None, **params):
     monkeypatch.setattr(screenshot, "read_image", lambda data: reads)
     key = jobs.store_image(sync_redis, b"fake image bytes")
     job = await jobs.create_job(db, user, "screenshot", {"images": [key], "courts": [], **params})
-    await jobs.run_job(job.id, session_factory, sync_redis, engine=Engine())
+    await jobs.run_job(job.id, session_factory, sync_redis, engine=engine or Engine())
     await db.refresh(job)
     return job
 
@@ -192,10 +212,12 @@ async def test_results_message_and_buttons(db, user, session_factory, sync_redis
     job = await run_screenshot(db, user, session_factory, sync_redis, reads, monkeypatch, telegram_chat_id="555",
                                courts=[{"state_code": "26", "dist_code": "6", "complex_value": "1260006@1,2@Y", "name": "Dwarka"}])
     chat, text, markup = sent[0]
-    assert chat == "555" and "Added 2 cases" in text  # both matches were sure: added without asking
+    assert chat == "555" and "Added 2 cases" in text  # both agreed with their eCourts records: added without asking
+    assert "Next: 27 Oct 2026" in text.replace("\\", "")
     assert_valid_markdown_v2(text)
-    # Nothing left to confirm: no Add buttons (just the website link)
-    assert not [b for row in (markup or {}).get("inline_keyboard", []) for b in row if "callback_data" in b]
+    # Nothing left to confirm: no Add buttons, just a Remove (undo) per added case
+    callbacks = [b["callback_data"] for row in (markup or {}).get("inline_keyboard", []) for b in row if "callback_data" in b]
+    assert len(callbacks) == 2 and all(c.startswith(f"rm:{job.id}:") for c in callbacks)
     assert len((await db.scalars(select(TrackedCase).where(TrackedCase.user_id == user.id))).all()) == 2
 
 
@@ -281,3 +303,135 @@ async def test_upload_screenshots_on_the_website(client, user, redis, db, monkey
     assert job.kind == "screenshot" and len(job.params["images"]) == 2
     r = await client.post("/find/screenshot", data={"csrf_token": CSRF}, files=[("images", ("x.pdf", b"%PDF", "application/pdf"))])
     assert "isn&#39;t an image" in r.text
+
+
+# --- Telling the right case from look-alikes ---
+
+async def test_sibling_case_with_other_hearing_dates_is_not_added(db, user, session_factory, sync_redis, monkeypatch):
+    """A misread digit lands on another case of the same parties: its hearing dates give it away."""
+    sent = []
+
+    async def fake_send(chat_id, text, parse_mode="MarkdownV2", reply_markup=None):
+        sent.append(text)
+
+    import search.telegram_reply as tr
+
+    monkeypatch.setattr(tr, "send_telegram_message", fake_send)
+    sibling = dict(RECORDS["DLWT020142452016"], next_hearing_date="2026-11-30",
+                   raw_data={"history": [{"hearing_date": "2026-07-01"}]})
+    read = read_cases(ocr_items("tis_hazari_cr_case"))[0]  # screenshot says Aug 14 2026
+    job = await run_screenshot(db, user, session_factory, sync_redis, [read], monkeypatch, telegram_chat_id="555",
+                               engine=Engine(records={"DLWT020142452016": sibling}),
+                               courts=[{"state_code": "26", "dist_code": "8", "complex_value": "1260001@1,2@Y", "name": "Tis Hazari"}])
+    assert not job.params.get("added")
+    assert "Hearing date differs" in sent[0]
+    assert await db.scalar(select(TrackedCase).where(TrackedCase.user_id == user.id)) is None
+
+
+class TwoCourts(Engine):
+    """The same CS DJ ADJ number exists at Tis Hazari and Dwarka."""
+
+    async def case_number(self, court, code, number, year):
+        self.searched.append((court.complex_code, code, number, year))
+        if code == "5^1":
+            cnr = "DLWT010000122021" if court.complex_code == "1260001" else "DLSW010079232021"
+            return [Hit(cnr, f"CS DJ ADJ/{number}/{year}", "CS DJ ADJ", year, "RAHUL VERMA", "MAHESH SINGH GILL")]
+        return []
+
+
+async def test_same_number_in_two_courts_asks_instead_of_guessing(db, user, session_factory, sync_redis, monkeypatch):
+    sent = []
+
+    async def fake_send(chat_id, text, parse_mode="MarkdownV2", reply_markup=None):
+        sent.append(text)
+
+    import search.telegram_reply as tr
+
+    monkeypatch.setattr(tr, "send_telegram_message", fake_send)
+    records = dict(RECORDS, DLWT010000122021=dict(RECORDS["DLSW010079232021"], next_hearing_date="2026-05-02"))
+    read = read_cases(ocr_items("cs_dj_adj_no_header"))[0]
+    for dist, name in (("8", "West"), ("6", "South West")):
+        db.add(UserCourt(user_id=user.id, state_code="26", state_name="Delhi", dist_code=dist, dist_name=name,
+                         complex_value="1260001@1,2@Y" if dist == "8" else "1260006@1,2@Y", complex_name=name))
+    await db.commit()
+    job = await run_screenshot(db, user, session_factory, sync_redis, [read], monkeypatch, telegram_chat_id="555",
+                               engine=TwoCourts(records=records),
+                               courts=[{"state_code": "26", "dist_code": "8", "complex_value": "1260001@1,2@Y", "name": "West"},
+                                       {"state_code": "26", "dist_code": "6", "complex_value": "1260006@1,2@Y", "name": "South West"}])
+    hits = (await db.scalars(select(SearchHit).where(SearchHit.job_id == job.id))).all()
+    assert len(hits) == 2  # both courts checked, not just the first
+    # Only one of them agrees with the screenshot's date (Feb 21 2026), so that one is added
+    assert job.params.get("added") == ["DLSW010079232021"]
+
+
+async def test_same_number_and_nothing_to_tell_them_apart(db, user, session_factory, sync_redis, monkeypatch):
+    sent = []
+
+    async def fake_send(chat_id, text, parse_mode="MarkdownV2", reply_markup=None):
+        sent.append(text)
+
+    import search.telegram_reply as tr
+
+    monkeypatch.setattr(tr, "send_telegram_message", fake_send)
+    read = ReadCase(case_type="CS DJ ADJ", number="812", year="2021", petitioner="RAHUL VERMA",
+                    respondent="MAHESH SINGH GILL")  # no court, no date
+    records = dict(RECORDS, DLWT010000122021=RECORDS["DLSW010079232021"])
+    job = await run_screenshot(db, user, session_factory, sync_redis, [read], monkeypatch, telegram_chat_id="555",
+                               engine=TwoCourts(records=records),
+                               courts=[{"state_code": "26", "dist_code": "8", "complex_value": "1260001@1,2@Y", "name": "West"},
+                                       {"state_code": "26", "dist_code": "6", "complex_value": "1260006@1,2@Y", "name": "South West"}])
+    assert not job.params.get("added")
+    assert "More than one case has this number" in sent[0].replace("\\", "")
+
+
+async def test_state_case_needs_more_than_the_parties(db, user, session_factory, sync_redis, monkeypatch):
+    """"STATE vs X" with no date on the screenshot: nothing independent confirms it."""
+    read = ReadCase(court_header="Chief Metropolitan Magistrate, West, THC,West", case_type="Cr. Case",
+                    number="65303", year="2016", petitioner="STATE", respondent="")
+    job = await run_screenshot(db, user, session_factory, sync_redis, [read], monkeypatch, courts=[{"state_code": "26", "dist_code": "8", "complex_value": "1260001@1,2@Y", "name": "Tis Hazari"}])
+    assert job.params["read"][0]["found"]  # found, just not sure
+    assert not job.params.get("added")
+
+
+async def test_cnr_whose_record_disagrees_is_not_added(db, user, session_factory, sync_redis, monkeypatch):
+    """A misread CNR points at a real but different case: its number gives it away."""
+    read = ReadCase(cnr="DLWT020142452016", case_type="Cr. Case", number="71234", year="2016", next_date="27-10-2026")
+    job = await run_screenshot(db, user, session_factory, sync_redis, [read], monkeypatch)
+    assert not job.params.get("added")
+    read = ReadCase(cnr="DLWT020142452016", case_type="Cr. Case", number="65303", year="2016", next_date="27-10-2026")
+    job = await run_screenshot(db, user, session_factory, sync_redis, [read], monkeypatch)
+    assert job.params.get("added") == ["DLWT020142452016"]
+
+
+def test_case_history_screen_uses_registration_not_filing_number():
+    # OCR boxes as the eCourts app's Case History screen gives them (numbers changed)
+    items = [(130, 120, "Case History"), (230, 247, "Case Details"),
+             (263, 350, "Cr. Case/130001/2016"), (40, 366, "Filing Number"), (263, 443, "23-09-2016"),
+             (40, 459, "Filing Date"), (40, 535, "Registration"), (263, 536, "Cr. Case/71234/2016"),
+             (40, 570, "Number"), (40, 628, "Registration"), (263, 629, "23-09-2016"), (40, 662, "Date"),
+             (263, 722, "DLWT020000012016"), (40, 738, "CNR Number"), (230, 839, "Case Status"),
+             (40, 941, "First Hearing"), (263, 942, "07-10-2016"), (40, 975, "Date"), (40, 1034, "Next Hearing"),
+             (263, 1035, "27-10-2026"), (40, 1068, "Date"), (263, 1128, "Arguments"), (40, 1144, "Case Stage")]
+    [c] = read_cases(items)
+    assert (c.cnr, c.case_type, c.number, c.year, c.next_date) == ("DLWT020000012016", "Cr. Case", "71234", "2016", "27-10-2026")
+    # Same screen with the CNR cut off: still the registration number
+    [c] = read_cases([i for i in items if not i[2].startswith("DLWT")])
+    assert (c.cnr, c.number) == ("", "71234")
+
+
+async def test_remove_button_undoes_an_automatic_add(db, user, session_factory, sync_redis, monkeypatch):
+    user.telegram_chat_id = "555"
+    await db.commit()
+    job = await run_screenshot(db, user, session_factory, sync_redis, [read_cases(ocr_items("tis_hazari_cr_case"))[0]],
+                               monkeypatch, courts=[{"state_code": "26", "dist_code": "8", "complex_value": "1260001@1,2@Y", "name": "Tis Hazari"}])
+    [case_id] = job.params["added_case_ids"]
+    update, ctx = make_update()
+    update.callback_query = SimpleNamespace(data=f"rm:{job.id}:{case_id}", answer=AsyncMock())
+    await tb.remove_added_case(update, ctx)
+    assert "Removed" in replies(update)[0]
+    assert await db.scalar(select(TrackedCase).where(TrackedCase.user_id == user.id)) is None
+    # Can't be used on cases the job didn't add
+    update, ctx = make_update()
+    update.callback_query = SimpleNamespace(data=f"rm:{job.id}:999999", answer=AsyncMock())
+    await tb.remove_added_case(update, ctx)
+    assert replies(update) == []

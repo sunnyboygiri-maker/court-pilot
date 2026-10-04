@@ -41,6 +41,7 @@ class PollResult:
     changes: dict = field(default_factory=dict)
     data_hash: Optional[str] = None
     error: Optional[str] = None
+    needs_enrich: bool = False  # judge's name or the latest order's text to fetch (scraper.extras)
 
 
 def _is_due(court_case: CourtCase, now) -> bool:
@@ -130,10 +131,18 @@ async def poll_one(db: AsyncSession, case_id: int, scraper: ECourtsScraper) -> O
         )
 
     # Always refresh the record (parties, advocates etc. aren't in the hash)
+    old_ref = court_case.court_ref
     apply_case_data(court_case, data)
+    if data.get("court_ref"):
+        court_case.court_ref = data["court_ref"]
+        if data["court_ref"] != old_ref:
+            court_case.judge_name = None  # transferred: look the new judge up
     court_case.last_polled_at = utcnow()
     court_case.poll_error_count = 0
     await db.commit()
+    from scraper.extras import needs_enrich, stored_order_numbers
+
+    result.needs_enrich = needs_enrich(court_case, old_ref, await stored_order_numbers(db, court_case.id))
     return result
 
 
@@ -187,6 +196,10 @@ def poll_case(self, case_id: int) -> dict:
 
     if result is None:
         return {"case_id": case_id, "skipped": "not found"}
+    if result.needs_enrich:
+        from workers.tasks.search import enrich_case
+
+        enrich_case.delay(case_id)
     if result.changes and CaseDiffDetector.should_notify(result.changes):
         from workers.tasks.send_notifications import send_case_update
 

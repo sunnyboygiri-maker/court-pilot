@@ -39,13 +39,44 @@ def summary(job: SearchJob, hits: list[SearchHit]) -> Summary:
 
 
 def _case_lines(h: SearchHit) -> list[str]:
+    """Number, parties, court, then what tells similar cases apart: next date, stage, judge."""
+    d = h.details or {}
     lines = [h.case_number or h.cnr_number]
     parties = f"{h.petitioner or ''}" + (f" vs {h.respondent}" if h.respondent else "")
     if parties.strip():
         lines.append(parties)
-    if h.court_name:
-        lines.append(h.court_name)
+    if h.court_name or d.get("court"):
+        lines.append(h.court_name or d["court"])
+    when = _nice_date(d.get("next_date"))
+    extra = " · ".join(x for x in (f"Next: {when}" if when else "", d.get("stage") or "", d.get("judge") or "") if x)
+    if extra:
+        lines.append(extra)
+    if h.case_number:
+        lines.append(f"CNR {h.cnr_number}")
     return lines
+
+
+def _nice_date(value) -> str:
+    from scraper.persist import parse_date
+
+    d = parse_date(value)
+    return d.strftime("%d %b %Y") if d else ""
+
+
+def _why_unsure(h: SearchHit, others: int) -> str:
+    """One line on why this candidate wasn't added by itself."""
+    checks = (h.details or {}).get("checks") or {}
+    if checks.get("number") is False:
+        return "⚠️ Case number differs from the screenshot"
+    if checks.get("date") is False:
+        return "⚠️ Hearing date differs from the screenshot"
+    if checks.get("parties") is False or h.score < 0.7:
+        return "⚠️ Parties differ from the screenshot"
+    if others:
+        return "⚠️ More than one case has this number"
+    if (h.details or {}).get("unchecked"):
+        return "Couldn't confirm it with eCourts just now"
+    return "Couldn't confirm it from the screenshot alone"
 
 
 def telegram_text(job: SearchJob, hits: list[SearchHit]) -> str:
@@ -58,16 +89,16 @@ def telegram_text(job: SearchJob, hits: list[SearchHit]) -> str:
         for h in s.added[:MAX_LISTED]:
             first, *rest = _case_lines(h)
             out.append(f"• *{esc(first)}*" + "".join(f"\n  {esc(x)}" for x in rest))
-        out.append(esc("You'll get reminders before every hearing."))
+        out.append(esc("You'll get reminders before every hearing. Wrong case? Tap Remove."))
         out.append("")
     if s.to_check:
         out.append(f"🔎 *Please check {'these' if len(s.to_check) > 1 else 'this'}*")
         for i, h in enumerate(s.to_check[:MAX_LISTED], 1):
             first, *rest = _case_lines(h)
             out.append(f"*{esc(f'{i}.')} {esc(first)}*" + "".join(f"\n{esc(x)}" for x in rest))
-            if h.score < 0.7:
-                out.append(esc("⚠️ Parties differ from the screenshot"))
-        out.append(esc("Tap Add for the right one."))
+            out.append(esc(_why_unsure(h, len(s.to_check) - 1)))
+        out.append(esc("Tap Add for the right one. For an exact match, send the eCourts Case History screen "
+                       "(it shows the CNR)."))
         out.append("")
     if s.over_limit:
         out.append(esc(f"{s.over_limit} not added: your plan's case limit is full."))
@@ -81,9 +112,17 @@ def telegram_text(job: SearchJob, hits: list[SearchHit]) -> str:
 
 
 def telegram_keyboard(job: SearchJob, hits: list[SearchHit]) -> dict | None:
-    to_check = summary(job, hits).to_check[:MAX_LISTED]
+    s = summary(job, hits)
+    to_check = s.to_check[:MAX_LISTED]
     buttons = [{"text": f"➕ Add {i}", "callback_data": f"fa:{job.id}:{h.id}"} for i, h in enumerate(to_check, 1)]
     rows = [buttons[i:i + 4] for i in range(0, len(buttons), 4)]
+    # Undo for each case that was added without asking
+    added_cases = job.params.get("added_cases") or {}
+    for h in s.added[:MAX_LISTED]:
+        case_id = added_cases.get(h.cnr_number)
+        if case_id:
+            rows.append([{"text": f"❌ Remove {h.case_number or h.cnr_number}"[:60],
+                          "callback_data": f"rm:{job.id}:{case_id}"}])
     base = settings.APP_BASE_URL.rstrip("/")
     if base.startswith("https://"):
         rows.append([{"text": "Open on website", "url": f"{base}/find/{job.id}"}])
@@ -99,7 +138,8 @@ def whatsapp_text(job: SearchJob, hits: list[SearchHit]) -> str:
     if s.added:
         out.append(f"✅ Added {len(s.added)} case{'s' if len(s.added) != 1 else ''} to your CourtPilot list:")
         out += ["• " + " · ".join(_case_lines(h)) for h in s.added[:MAX_LISTED]]
-        out.append("You'll get reminders before every hearing.")
+        out.append("You'll get reminders before every hearing. Wrong case? Open it on the website and tap "
+                   "Stop tracking.")
     if s.to_check:
         out.append(f"\n🔎 {len(s.to_check)} possible match{'es' if len(s.to_check) != 1 else ''} need your check: "
                    f"{settings.APP_BASE_URL.rstrip('/')}/find/{job.id}")

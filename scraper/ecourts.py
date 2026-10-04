@@ -159,9 +159,24 @@ class ECourtsScraper:
             raw.setdefault("bench", court.bench)
             return self._normalize_case_data(raw, "high_court")
 
-        async with DistrictCourtClient() as dc:
-            detail = await dc.case_status_by_cnr(cnr)
-        return self._normalize_case_data(self._case_detail_to_raw(detail), "district")
+        from bharat_courts.casedetail import parse_case_detail
+        from bharat_courts.districtcourts import endpoints
+
+        from scraper.district import DistrictPortal, parse_court_ref, stored_orders
+
+        async with DistrictPortal(DistrictCourtClient) as portal:
+            page = await portal.case_page(cnr)
+        if not page:
+            raise CaseNotFoundError(f"Case not found for CNR: {cnr_number}")
+        raw = self._case_detail_to_raw(parse_case_detail(page, cnr=cnr, base_url=endpoints.BASE_URL))
+        # District order links only work inside the session that loaded the page:
+        # keep each order's number (to fetch its PDF later) instead of a dead link
+        orders = stored_orders(page)
+        if orders:
+            raw["orders"] = orders
+        data = self._normalize_case_data(raw, "district")
+        data["court_ref"] = parse_court_ref(page)
+        return data
 
     @staticmethod
     def _case_detail_to_raw(detail) -> dict:

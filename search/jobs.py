@@ -185,12 +185,13 @@ async def _save(db: AsyncSession, job: SearchJob, court: dict, hits: list[Hit], 
             keep.append({"job_id": job.id, "cnr_number": h.cnr_number, "case_type": h.case_type or None,
                          "case_number": h.case_number or None, "petitioner": h.petitioner or None,
                          "respondent": h.respondent or None, "fir": h.fir or None,
-                         "court_name": h.court_name or None, "score": round(score, 3), "source": source})
+                         "court_name": h.court_name or None, "score": round(score, 3), "source": source,
+                         "details": h.extra.get("details")})
     if keep:
         stmt = pg_insert(SearchHit).values(list({r["cnr_number"]: r for r in keep}.values()))
         await db.execute(stmt.on_conflict_do_update(
             constraint="uq_search_hit",
-            set_={"score": func.greatest(SearchHit.score, stmt.excluded.score)},
+            set_={"score": func.greatest(SearchHit.score, stmt.excluded.score), "details": stmt.excluded.details},
         ))
 
 
@@ -267,14 +268,12 @@ async def run_job(job_id: int, session_factory: Callable, redis, engine: Optiona
             await auto_add(db, job)
 
 
-AUTO_ADD_SCORE = 0.88  # screenshot matches this sure are added without asking
-
-
 async def auto_add(db: AsyncSession, job: SearchJob) -> None:
     """
     Add the cases a search is sure about straight to the lawyer's list:
-    a case-number search with exactly one result, or screenshot matches whose
-    parties agree (or that showed a CNR). Anything less sure waits for a tap.
+    a case-number search with exactly one result, or a screenshot case whose
+    one candidate agrees with its full eCourts record. Anything less sure waits
+    for a tap.
     """
     from search.add import add_hits, fetch_details
 
@@ -282,9 +281,14 @@ async def auto_add(db: AsyncSession, job: SearchJob) -> None:
     if job.kind == "number":
         sure = list(hits) if len(hits) == 1 else []
     else:
-        found_per_read = [r.get("found") or [] for r in job.params.get("read", [])]
-        single = {cnrs[0] for cnrs in found_per_read if len(cnrs) == 1}
-        sure = [h for h in hits if h.cnr_number in single and h.score >= AUTO_ADD_SCORE]
+        # Per case on the screenshot: add it only if exactly one candidate passed
+        # the check against its full eCourts record (search.resolve.verify)
+        by_cnr = {h.cnr_number: h for h in hits}
+        sure = []
+        for r in job.params.get("read", []):
+            passed = [by_cnr[c] for c in r.get("found") or [] if c in by_cnr and (by_cnr[c].details or {}).get("sure")]
+            if len(passed) == 1:
+                sure.append(passed[0])
     if not sure:
         return
     user = await db.get(User, job.user_id)
@@ -294,7 +298,9 @@ async def auto_add(db: AsyncSession, job: SearchJob) -> None:
 
     in_list = result.added + result.already
     params = dict(job.params)
-    params["added"] = list((await db.scalars(select(CourtCase.cnr_number).where(CourtCase.id.in_(in_list)))).all())
+    rows = (await db.execute(select(CourtCase.cnr_number, CourtCase.id).where(CourtCase.id.in_(in_list)))).all()
+    params["added"] = [cnr for cnr, _ in rows]
+    params["added_cases"] = {cnr: case_id for cnr, case_id in rows if case_id in result.added}
     params["added_case_ids"] = result.added
     params["over_limit"] = result.over_limit
     job.params = params
@@ -479,7 +485,13 @@ async def run_screenshot_job(db: AsyncSession, job: SearchJob, redis, engine: Di
                 job.failed += 1
         for h in hits:
             h.extra["score"] = parties_score(read, h) or 1.0
-        await _save(db, job, section["court"] if section else {}, hits, source="ecourts" if section else "screenshot")
+        await _check_hits(engine, redis, read, hits)
+        by_court: dict[str, tuple[dict, list[Hit]]] = {}
+        for h in hits:
+            court = (h.extra.get("section") or {}).get("court") or {}
+            by_court.setdefault(court.get("complex_value", ""), (court, []))[1].append(h)
+        for court, group in by_court.values():
+            await _save(db, job, court, group, source="ecourts" if court else "screenshot")
         params["read"][i]["found"] = [h.cnr_number for h in hits]
         job.params = dict(params)
         flag_modified(job, "params")  # the change is inside a nested list
@@ -489,6 +501,34 @@ async def run_screenshot_job(db: AsyncSession, job: SearchJob, redis, engine: Di
     await db.commit()
     await auto_add(db, job)
     await _notify_telegram(db, job)
+
+
+MAX_CHECKED = 3  # candidates checked against their full record (one eCourts lookup each)
+
+
+async def _check_hits(engine: DistrictSearch, redis, read, hits: list[Hit]) -> None:
+    """Fetch each candidate's full record and compare it with the screenshot (search.resolve.verify)."""
+    from search.resolve import verify
+
+    if not hasattr(engine, "case_details"):
+        return
+    for h in hits[:MAX_CHECKED]:
+        try:
+            await _wait_for_slot(redis)
+            data = await asyncio.wait_for(engine.case_details(h.cnr_number), LOOKUP_TIMEOUT)
+        except Exception as e:
+            logger.warning("Couldn't check %s against eCourts: %s", h.cnr_number, e)
+            h.extra["details"] = {"sure": False, "checks": {}, "unchecked": True}
+            continue
+        h.extra["details"] = verify(read, data)
+        d = h.extra["details"]
+        # A CNR-only read now has its real number, parties and court to show
+        h.case_number = h.case_number or " ".join(x for x in (d.get("case_type"), d.get("case_number")) if x)
+        h.petitioner = h.petitioner or d.get("petitioner") or ""
+        h.respondent = h.respondent or d.get("respondent") or ""
+        h.court_name = h.court_name or d.get("court") or ""
+    for h in hits[MAX_CHECKED:]:
+        h.extra["details"] = {"sure": False, "checks": {}, "unchecked": True}
 
 
 async def _notify_telegram(db: AsyncSession, job: SearchJob) -> None:

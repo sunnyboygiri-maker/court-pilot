@@ -11,7 +11,11 @@ image into text boxes; the rules below turn those boxes into cases:
    Number | Party Name columns. Values don't line up exactly with their
    headings and long case numbers wrap ("Ct. Cases/49" + "90319/2016"), so
    columns are split halfway between headings and wrapped numbers re-joined.
-3. Otherwise, the first "TYPE/NUMBER/YEAR" and "A Vs B" in the text.
+3. The eCourts app's Case History screen: label | value rows ("Registration
+   Number | Cr. Case/71234/2016", "CNR Number | …", "Next Hearing Date | …").
+   The case number searched on is the registration number, never the
+   filing number shown above it.
+4. Otherwise, the first "TYPE/NUMBER/YEAR" and "A Vs B" in the text.
 """
 import re
 import threading
@@ -142,8 +146,65 @@ def _my_cases_screen(items) -> list[ReadCase]:
     return found
 
 
+LABEL_STARTS = ("filing", "registration", "cnr", "first hearing", "next hearing", "case stage", "case status",
+                "court number", "decision", "nature of disposal", "under act", "under section", "first", "next",
+                "court", "case")
+DATE_RE = re.compile(r"\b(\d{1,2})[-./](\d{1,2})[-./]((?:19|20)\d{2})\b")
+
+
+def _labelled_rows(items) -> dict[str, str]:
+    """Case History / Case Details screens: {"registration number": "Cr. Case/71234/2016", ...}."""
+    labels = [(x, y, t) for x, y, t in items if t.lower().startswith(LABEL_STARTS) and not re.search(r"\d{3}", t)]
+    if len(labels) < 3:
+        return {}
+    label_x = min(x for x, _, _ in labels)
+    # Values sit well to the right of the label column; long labels wrap onto a second line
+    values = [(x, y, t) for x, y, t in items if x > label_x + 120]
+    left = [(x, y, t) for x, y, t in items if x <= label_x + 120]
+    rows: dict[str, str] = {}
+    for vx, vy, vt in sorted(values, key=lambda v: v[1]):
+        near = sorted((ly, lt) for lx, ly, lt in left if vy - 30 <= ly <= vy + 55)
+        if not near:
+            continue
+        label = " ".join(lt for _, lt in near).lower()
+        label = re.sub(r"\s+", " ", label)
+        if label in rows:
+            rows[label] += " " + vt  # value wrapped onto a second line
+        else:
+            rows[label] = vt
+    return rows
+
+
+def _row(rows: dict[str, str], *starts: str) -> str:
+    for label, value in rows.items():
+        if any(label.startswith(s) for s in starts):
+            return value
+    return ""
+
+
+def _details_screen(items) -> list[ReadCase]:
+    rows = _labelled_rows(items)
+    if not rows:
+        return []
+    reg = _row(rows, "registration number", "registration no")
+    case_type, number, year = _case_fields(re.sub(r"\s*/\s*", "/", reg))
+    cnr_text = _row(rows, "cnr")
+    m = CNR_RE.search(cnr_text.upper().replace(" ", ""))
+    cnr = normalize_cnr(m.group(1)[:4] + m.group(1)[4:].replace("O", "0")) if m else ""
+    nxt = DATE_RE.search(_row(rows, "next hearing", "next date"))
+    if not (number or cnr):
+        return []
+    return [ReadCase(cnr=cnr or "", case_type=case_type, number=number, year=year,
+                     next_date=f"{nxt.group(1)}-{nxt.group(2)}-{nxt.group(3)}" if nxt else "",
+                     status=_row(rows, "case status"),
+                     court_header="")]
+
+
 def read_cases(items: list[tuple[float, float, str]]) -> list[ReadCase]:
     """All the cases a screenshot shows."""
+    details = _details_screen(items)
+    if details:
+        return details
     text = " ".join(t for x, y, t in sorted(items, key=lambda i: (i[1], i[0])))
     cases: list[ReadCase] = []
     for m in CNR_RE.finditer(text.upper()):
@@ -152,7 +213,10 @@ def read_cases(items: list[tuple[float, float, str]]) -> list[ReadCase]:
             cases.append(ReadCase(cnr=cnr))
     cases += _my_cases_screen(items)
     if not cases:
-        case_type, number, year = _case_fields(re.sub(r"\s*/\s*", "/", text))
+        # Skip a filing number ("Filing Number Cr. Case/130001/2016"): eCourts searches by registration number
+        text_for_number = re.sub(r"filing\s*(?:number|no\.?)\s*[A-Za-z][A-Za-z .()\-]*?/\s*\d+\s*/\s*\d{4}", " ",
+                                 text, flags=re.I)
+        case_type, number, year = _case_fields(re.sub(r"\s*/\s*", "/", text_for_number))
         vs = re.search(r"([A-Z][A-Z .&]{2,}?)\s+Vs\.?\s+([A-Z][A-Z .&]{2,})", text)
         if number or vs:
             cases.append(ReadCase(case_type=case_type, number=number, year=year,

@@ -30,6 +30,8 @@ celery_app.conf.update(
     # the `poller` service) a big poll batch can't delay reminders, which stay
     # on the default "celery" queue
     task_routes={
+        # Background reading of whole cause lists: keep it off the searcher lawyers wait on
+        "workers.tasks.search.refresh_cause_lists": {"queue": "polling"},
         "workers.tasks.poll_cases.*": {"queue": "polling"},
         # Lawyers wait on screen for these, so they get their own worker
         "workers.tasks.search.*": {"queue": "search"},
@@ -60,6 +62,12 @@ celery_app.conf.beat_schedule = {
     "weekly-digest": {
         "task": "workers.tasks.send_notifications.send_weekly_digest",
         "schedule": crontab(minute="*/15"),
+    },
+    # Cause lists for today and tomorrow: courts publish them the evening before
+    # (sometimes late), so look in the evening, at night and first thing in the morning
+    "cause-lists": {
+        "task": "workers.tasks.search.refresh_cause_lists",
+        "schedule": crontab(hour="7,18,21", minute=10),
     },
     # 1-day reminder is an evening message for everyone
     "evening-reminders": {
