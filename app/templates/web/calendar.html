@@ -1,0 +1,52 @@
+{% extends "web/base.html" %}
+{% from "web/_icons.html" import icon %}
+{% block title %}Calendar{% endblock %}
+{% block main_class %}wide{% endblock %}
+{% block content %}
+<div class="cal-head">
+  <h1>{{ first.strftime("%B %Y") }}</h1>
+  <a class="btn secondary icon-nav" href="/calendar?month={{ prev_month }}" aria-label="Previous month">{{ icon("back") }}</a>
+  {% if first.strftime("%Y-%m") != this_month %}<a class="btn secondary sm" href="/calendar">This month</a>{% endif %}
+  <a class="btn secondary icon-nav" href="/calendar?month={{ next_month }}" aria-label="Next month" style="transform:scaleX(-1)">{{ icon("back") }}</a>
+</div>
+
+<div class="cal-layout">
+  <div>
+    <div class="cal-grid" role="grid" aria-label="Hearings in {{ first.strftime('%B %Y') }}">
+      {% for name in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] %}<span class="dow" role="columnheader">{{ name[:1] }}<span class="sr-only">{{ name[1:] }}</span></span>{% endfor %}
+      {% for week in weeks %}{% for d in week %}
+        <a class="cal-day {{ 'out' if not d.in_month }} {{ 'weekend' if d.weekend and d.in_month }} {{ 'today' if d.date == today }} {{ 'has-urgent' if d.urgent }} {{ 'clash' if d.clash }}"
+           role="gridcell" href="/calendar?month={{ d.date.strftime('%Y-%m') }}&day={{ d.date.isoformat() }}#day"
+           {% if picked and d.date == picked %}aria-current="date"{% endif %}
+           aria-label="{{ d.date.strftime('%a %d %b') }}: {{ d.count or 'no' }} hearing{{ 's' if d.count != 1 }}{{ ', two courts' if d.clash }}">
+          <span class="n">{{ d.date.day }}</span>
+          {% if d.count %}<span class="cnt">{{ d.count }}</span>{% endif %}
+        </a>
+      {% endfor %}{% endfor %}
+    </div>
+    <p class="cal-legend">
+      <span><i style="background:var(--info-soft);border:1px solid var(--info)"></i>Hearings that day</span>
+      <span><i style="background:var(--danger-soft);border:1px solid var(--danger)"></i>Includes an urgent case</span>
+      <span><b>!</b> Two or more courts</span>
+    </p>
+  </div>
+
+  <section id="day">
+    {% if picked %}
+      <div class="section-head" style="margin-top:0"><h2>{{ fmt_date(picked) }}</h2><span class="count">{{ day_items|length }}</span></div>
+      {% if day_items %}
+        <ul class="docket">{% for c in day_items %}{% include "web/_hearing_card.html" %}{% endfor %}</ul>
+      {% else %}
+        <p class="empty-day">No hearings on this day.</p>
+      {% endif %}
+    {% else %}
+      <div class="section-head" style="margin-top:0"><h2>All hearings in {{ first.strftime("%B") }}</h2><span class="count">{{ month_items|length }}</span></div>
+      {% if month_items %}
+        <ul class="docket">{% for c in month_items %}{% include "web/_hearing_card.html" %}{% endfor %}</ul>
+      {% else %}
+        <p class="empty-day">No hearings this month. Tap another month above.</p>
+      {% endif %}
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

@@ -100,7 +100,7 @@ async def test_login_flow_for_linked_user(client, make_user, sent_codes):
     assert client.cookies.get(SESSION_COOKIE)
 
     r = await client.get("/")
-    assert r.status_code == 200 and "Hello, Adv. Test" in r.text and "logged in." in r.text
+    assert r.status_code == 200 and "Adv. Test" in r.text and "logged in." in r.text
 
 
 async def test_unlinked_number_is_shown_how_to_connect_telegram(client, monkeypatch):
@@ -339,7 +339,7 @@ async def test_email_login_creates_account_then_logs_in(client, db, email_codes,
     assert r.status_code == 303 and r.headers["location"] == "/"
     user = await db.scalar(select(User).where(User.email == "priya@example.com"))
     assert user.phone is None and user.email_verified and user.name == "Adv. Priya"
-    assert "Hello, Adv. Priya" in (await client.get("/")).text
+    assert "Adv. Priya" in (await client.get("/")).text
     assert "Not added" in (await client.get("/settings")).text  # no phone yet
 
     # Next time: same account, no name question
@@ -401,7 +401,7 @@ async def test_google_login(client, db, google):
     assert r.status_code == 303 and r.headers["location"] == "/"
     user = await db.scalar(select(User).where(User.email == "lawyer@gmail.com"))
     assert user.name == "Adv. Google User" and user.email_verified and user.phone is None
-    assert "Hello, Adv. Google User" in (await client.get("/")).text
+    assert "Adv. Google User" in (await client.get("/")).text
 
 
 async def test_google_login_rejects_bad_state_and_unverified_email(client, db, google):
@@ -439,3 +439,25 @@ def test_links_inside_forms_do_not_inherit_hx_disabled_elt():
             inner = form.split(">", 1)[1]
             if "hx-disabled-elt" in opening and ("<a " in inner or "hx-get" in inner):
                 assert "hx-disinherit" in opening, f"{path.name}: {opening[:80]}"
+
+
+async def test_calendar_shows_hearings_by_day(web, scraper):
+    case_id = await track(web, CNR_A)  # next hearing in 5 days
+    day = today_ist() + timedelta(days=5)
+    r = await web.get(f"/calendar?month={day.strftime('%Y-%m')}")
+    assert r.status_code == 200 and day.strftime("%B %Y") in r.text
+    assert f'aria-label="{day.strftime("%a %d %b")}: 1 hearing"' in r.text
+    r = await web.get(f"/calendar?month={day.strftime('%Y-%m')}&day={day.isoformat()}")
+    assert f"/cases/{case_id}/view" in r.text and 'aria-current="date"' in r.text
+    # Bad input falls back to this month instead of failing
+    assert (await web.get("/calendar?month=not-a-month&day=nope")).status_code == 200
+
+
+async def test_overdue_cases_lead_the_today_page(web, db):
+    case_id = await track(web, CNR_A)
+    c = await db.get(CourtCase, case_id)
+    c.next_hearing_date = today_ist() - timedelta(days=3)
+    await db.commit()
+    page = (await web.get("/")).text
+    assert "need" in page and "attention" in page and "3 D AGO" in page
+    assert page.index("attention") < page.index('id="today"')

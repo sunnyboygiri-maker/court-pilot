@@ -1,0 +1,431 @@
+<title>CourtPilot Redesign Review</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Public+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&family=Newsreader:opsz,wght@6..72,500;6..72,600&family=Figtree:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: one reading column for the audit; the three directions sit side by side on wide screens, stacked on phones. */
+:root {
+  --bg: #f4f5f7; --surface: #ffffff; --fg: #1a1f27; --muted: #586170; --line: #dfe3e8; --accent: #2f4a6d;
+  --sev-high: #a3261d; --sev-high-bg: #fbeceb; --sev-mid: #8a5a00; --sev-mid-bg: #fdf3df; --sev-low: #3d5a80; --sev-low-bg: #e9eff7;
+  --ui: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif; --display: "Source Serif 4", Georgia, serif;
+  --mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+
+  /* Direction A: Court Paper */
+  --a-bg: #f6f7f9; --a-paper: #ffffff; --a-ink: #141a24; --a-muted: #5a6474; --a-rule: #d9dde3; --a-brand: #1f2d44;
+  --a-tape: #b4232a; --a-tape-bg: #fbe9ea; --a-amber: #8c5b00; --a-amber-bg: #fcf1dc; --a-ok: #2f6b45; --a-ok-bg: #e7f2ea;
+  /* Direction B: Docket */
+  --b-bg: #eef1f4; --b-panel: #ffffff; --b-ink: #111820; --b-muted: #54606e; --b-rule: #d5dbe2; --b-brand: #0f2a3f;
+  --b-board: #0f2a3f; --b-board-ink: #ffd27a; --b-red: #b3261e; --b-red-bg: #fbe9e7; --b-amber: #8a5800; --b-amber-bg: #fdf0d8;
+  --b-ok: #23673f; --b-ok-bg: #e4f2e9; --b-blue-bg: #e6eef7;
+  /* Direction C: Chamber */
+  --c-bg: #f2f5f3; --c-panel: #ffffff; --c-ink: #17201b; --c-muted: #56625b; --c-rule: #d6ded9; --c-brand: #1d4a3a;
+  --c-brass: #8a6a1f; --c-brass-bg: #f6efdc; --c-red: #a8322a; --c-red-bg: #f9eae8; --c-ok-bg: #e3efe8;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1216; --surface: #171b21; --fg: #e6e9ee; --muted: #a2abb8; --line: #2a313b; --accent: #9db8dd;
+    --sev-high: #f19a92; --sev-high-bg: #3a1c1a; --sev-mid: #f0c26b; --sev-mid-bg: #33280f; --sev-low: #a9c2e4; --sev-low-bg: #1c2736;
+    --a-bg: #10141a; --a-paper: #181d25; --a-ink: #eceff3; --a-muted: #a4adba; --a-rule: #2b323d; --a-brand: #c9d6ea;
+    --a-tape: #f08a85; --a-tape-bg: #3b1c1d; --a-amber: #f0c26b; --a-amber-bg: #33280f; --a-ok: #86c99d; --a-ok-bg: #16301f;
+    --b-bg: #0c1117; --b-panel: #141b23; --b-ink: #e8edf2; --b-muted: #9fabb8; --b-rule: #253040; --b-brand: #b7cde3;
+    --b-board: #0a1824; --b-board-ink: #ffd27a; --b-red: #f2928a; --b-red-bg: #3a1a18; --b-amber: #f0c26b; --b-amber-bg: #33270e;
+    --b-ok: #84c79c; --b-ok-bg: #15301f; --b-blue-bg: #18263a;
+    --c-bg: #0f1412; --c-panel: #161d19; --c-ink: #e7ece9; --c-muted: #a1aea6; --c-rule: #27322c; --c-brand: #9fd1b9;
+    --c-brass: #e2c27a; --c-brass-bg: #2f2812; --c-red: #f0968d; --c-red-bg: #381b19; --c-ok-bg: #173025;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1216; --surface: #171b21; --fg: #e6e9ee; --muted: #a2abb8; --line: #2a313b; --accent: #9db8dd;
+  --sev-high: #f19a92; --sev-high-bg: #3a1c1a; --sev-mid: #f0c26b; --sev-mid-bg: #33280f; --sev-low: #a9c2e4; --sev-low-bg: #1c2736;
+  --a-bg: #10141a; --a-paper: #181d25; --a-ink: #eceff3; --a-muted: #a4adba; --a-rule: #2b323d; --a-brand: #c9d6ea;
+  --a-tape: #f08a85; --a-tape-bg: #3b1c1d; --a-amber: #f0c26b; --a-amber-bg: #33280f; --a-ok: #86c99d; --a-ok-bg: #16301f;
+  --b-bg: #0c1117; --b-panel: #141b23; --b-ink: #e8edf2; --b-muted: #9fabb8; --b-rule: #253040; --b-brand: #b7cde3;
+  --b-board: #0a1824; --b-board-ink: #ffd27a; --b-red: #f2928a; --b-red-bg: #3a1a18; --b-amber: #f0c26b; --b-amber-bg: #33270e;
+  --b-ok: #84c79c; --b-ok-bg: #15301f; --b-blue-bg: #18263a;
+  --c-bg: #0f1412; --c-panel: #161d19; --c-ink: #e7ece9; --c-muted: #a1aea6; --c-rule: #27322c; --c-brand: #9fd1b9;
+  --c-brass: #e2c27a; --c-brass-bg: #2f2812; --c-red: #f0968d; --c-red-bg: #381b19; --c-ok-bg: #173025;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font: 15px/1.55 var(--ui); padding: 0 16px; }
+.wrap { max-width: 1180px; margin: 0 auto; padding-block: 40px 72px; display: grid; gap: 48px; }
+.read { max-width: 760px; }
+h1, h2, h3 { text-wrap: balance; line-height: 1.2; margin: 0; }
+h1 { font: 700 2.1rem/1.15 var(--display); letter-spacing: -.01em; }
+h2 { font: 600 1.5rem/1.2 var(--display); }
+h3 { font-size: 1.05rem; }
+p { margin: 0; }
+.lede { color: var(--muted); font-size: 1.05rem; margin-top: 10px; max-width: 65ch; }
+.eyebrow { font-size: .75rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+section { display: grid; gap: 18px; }
+.meta { display: flex; flex-wrap: wrap; gap: 8px 20px; color: var(--muted); font-size: .9rem; margin-top: 14px; }
+.meta b { color: var(--fg); font-weight: 600; }
+
+/* Audit list */
+.issues { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.issue { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px;
+  display: grid; grid-template-columns: 2.2rem 1fr; gap: 4px 12px; }
+.issue .n { grid-row: span 3; font: 700 1.05rem var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; padding-top: 1px; }
+.issue h3 { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; }
+.issue p { color: var(--muted); max-width: 70ch; min-width: 0; }
+.issue .fix { color: var(--fg); }
+.issue .fix b { font-weight: 600; }
+.sev { font: 700 .68rem var(--ui); letter-spacing: .06em; text-transform: uppercase; padding: 2px 7px; border-radius: 4px; }
+.sev.high { color: var(--sev-high); background: var(--sev-high-bg); }
+.sev.mid { color: var(--sev-mid); background: var(--sev-mid-bg); }
+.sev.low { color: var(--sev-low); background: var(--sev-low-bg); }
+.where { font-size: .8rem; color: var(--muted); font-weight: 500; }
+
+.callout { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; display: grid; gap: 8px; }
+.callout ul { margin: 0; padding-left: 1.1rem; color: var(--muted); display: grid; gap: 4px; }
+
+/* Directions */
+.dirs { display: grid; gap: 22px; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); align-items: start; }
+.dir { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 18px; display: grid; gap: 14px; min-width: 0; }
+.dir.rec { border: 2px solid var(--accent); }
+.dir header { display: grid; gap: 4px; }
+.dir .tag { justify-self: start; font-size: .72rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--surface); background: var(--accent); padding: 3px 8px; border-radius: 4px; }
+.dir .mood { color: var(--muted); }
+.spec { display: grid; gap: 8px; font-size: .88rem; }
+.spec div { display: grid; grid-template-columns: 5.6rem 1fr; gap: 8px; }
+.spec dt { color: var(--muted); font-weight: 600; }
+.spec dd { margin: 0; min-width: 0; }
+.spec dl { margin: 0; display: grid; gap: 8px; }
+.swatches { display: flex; flex-wrap: wrap; gap: 6px; }
+.sw { width: 26px; height: 26px; border-radius: 6px; border: 1px solid var(--line); }
+.sample { font-size: 1.15rem; }
+.mock-label { font-size: .75rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin-top: 4px; }
+.mocks { display: grid; gap: 12px; }
+.phone { border-radius: 18px; overflow: hidden; border: 1px solid var(--line); max-width: 340px; width: 100%; justify-self: center; }
+.mini { border-radius: 10px; overflow: hidden; border: 1px solid var(--line); }
+.notes { color: var(--muted); font-size: .88rem; display: grid; gap: 6px; }
+.notes b { color: var(--fg); font-weight: 600; }
+
+/* ---------- Direction A: Court Paper ---------- */
+.A { background: var(--a-bg); color: var(--a-ink); font-family: "IBM Plex Sans", system-ui, sans-serif; }
+.A .bar { background: var(--a-paper); border-bottom: 1px solid var(--a-rule); padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; }
+.A .bar b { font: 700 1rem "Source Serif 4", Georgia, serif; color: var(--a-brand); }
+.A .bar span { font-size: .75rem; color: var(--a-muted); }
+.A .pad { padding: 14px 14px 16px; display: grid; gap: 12px; }
+.A .day { font: 600 1.35rem/1.2 "Source Serif 4", Georgia, serif; }
+.A .day small { display: block; font: 500 .78rem "IBM Plex Sans", sans-serif; color: var(--a-muted); margin-top: 2px; }
+.A .attn { border-left: 3px solid var(--a-tape); background: var(--a-tape-bg); padding: 8px 10px; border-radius: 0 6px 6px 0; font-size: .8rem; }
+.A .attn b { color: var(--a-tape); }
+.A .sec { font-size: .68rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--a-muted); border-bottom: 1px solid var(--a-rule); padding-bottom: 4px; }
+.A .row { background: var(--a-paper); border: 1px solid var(--a-rule); border-radius: 6px; padding: 10px 12px; display: grid; grid-template-columns: 3rem 1fr; gap: 10px; }
+.A .item { text-align: center; border-right: 1px solid var(--a-rule); padding-right: 8px; }
+.A .item small { display: block; font-size: .6rem; font-weight: 700; letter-spacing: .06em; color: var(--a-muted); }
+.A .item b { font: 700 1.35rem "Source Serif 4", serif; }
+.A .t { font: 600 .95rem/1.25 "Source Serif 4", Georgia, serif; }
+.A .m { font-size: .74rem; color: var(--a-muted); margin-top: 2px; }
+.A .chips { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 5px; }
+.A .chip { font-size: .62rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; padding: 1px 6px; border-radius: 3px; }
+.A .listed { color: var(--a-ok); background: var(--a-ok-bg); } .A .urgent { color: var(--a-tape); background: var(--a-tape-bg); }
+.A .leave { color: var(--a-amber); background: var(--a-amber-bg); }
+.A .cal { padding: 10px; display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; font-size: .68rem; background: var(--a-paper); }
+.A .cal .h { color: var(--a-muted); font-weight: 700; text-align: center; padding-bottom: 4px; }
+.A .cal .d { min-height: 34px; border-top: 1px solid var(--a-rule); padding: 2px 3px; font-variant-numeric: tabular-nums; }
+.A .cal .d i { display: block; height: 4px; border-radius: 2px; background: var(--a-brand); margin-top: 3px; }
+.A .cal .d i.u { background: var(--a-tape); }
+.A .cal .d.now { outline: 2px solid var(--a-brand); outline-offset: -2px; border-radius: 3px; }
+.A .tl { padding: 12px 14px; background: var(--a-paper); display: grid; gap: 10px; font-size: .78rem; }
+.A .ev { display: grid; grid-template-columns: 4.2rem 1fr; gap: 10px; }
+.A .ev .d { font: 600 .74rem "IBM Plex Sans", sans-serif; color: var(--a-muted); font-variant-numeric: tabular-nums; }
+.A .ev .b { border-left: 2px solid var(--a-rule); padding-left: 10px; }
+.A .ev.order .b { border-left-color: var(--a-brand); }
+.A .ev b { font-family: "Source Serif 4", serif; font-size: .86rem; }
+
+/* ---------- Direction B: Docket ---------- */
+.B { background: var(--b-bg); color: var(--b-ink); font-family: "Public Sans", system-ui, sans-serif; }
+.B .bar { background: var(--b-board); color: #fff; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; }
+.B .bar b { font-weight: 800; letter-spacing: .02em; }
+.B .bar span { font: 700 .72rem "JetBrains Mono", monospace; color: var(--b-board-ink); }
+.B .pad { padding: 12px; display: grid; gap: 10px; }
+.B .top { display: flex; justify-content: space-between; align-items: baseline; }
+.B .day { font-weight: 800; font-size: 1.15rem; }
+.B .cnt { font: 700 .72rem "JetBrains Mono", monospace; color: var(--b-muted); }
+.B .attn { background: var(--b-red-bg); color: var(--b-red); font-size: .78rem; font-weight: 700; padding: 7px 10px; border-radius: 4px; display: flex; justify-content: space-between; }
+.B .tbl { background: var(--b-panel); border: 1px solid var(--b-rule); border-radius: 4px; }
+.B .tr { display: grid; grid-template-columns: 2.6rem 1fr auto; gap: 10px; padding: 9px 10px; border-top: 1px solid var(--b-rule); align-items: start; }
+.B .tr:first-child { border-top: 0; }
+.B .no { font: 700 1.2rem/1 "JetBrains Mono", monospace; text-align: center; background: var(--b-board); color: var(--b-board-ink); border-radius: 3px; padding: 6px 0; }
+.B .no small { display: block; font-size: .5rem; color: #c9d5e2; letter-spacing: .05em; margin-bottom: 2px; }
+.B .t { font-weight: 700; font-size: .86rem; line-height: 1.25; }
+.B .m { font-size: .72rem; color: var(--b-muted); margin-top: 2px; }
+.B .st { font-size: .6rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; padding: 2px 5px; border-radius: 3px; white-space: nowrap; }
+.B .listed { color: var(--b-ok); background: var(--b-ok-bg); } .B .leave { color: var(--b-amber); background: var(--b-amber-bg); }
+.B .urgent { color: var(--b-red); background: var(--b-red-bg); }
+.B .cal { background: var(--b-panel); padding: 8px; display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; font-size: .66rem; }
+.B .cal .h { text-align: center; color: var(--b-muted); font-weight: 800; }
+.B .cal .d { min-height: 34px; background: var(--b-bg); border-radius: 3px; padding: 2px 3px; font: 500 .62rem "JetBrains Mono", monospace; position: relative; }
+.B .cal .d b { position: absolute; right: 3px; bottom: 2px; font-size: .7rem; color: var(--b-ink); }
+.B .cal .d.busy { background: var(--b-blue-bg); } .B .cal .d.u b { color: var(--b-red); }
+.B .cal .d.now { background: var(--b-board); color: var(--b-board-ink); } .B .cal .d.now b { color: var(--b-board-ink); }
+.B .tl { background: var(--b-panel); font-size: .74rem; }
+.B .ev { display: grid; grid-template-columns: 4.6rem 4.2rem 1fr; gap: 8px; padding: 7px 10px; border-top: 1px solid var(--b-rule); }
+.B .ev:first-child { border-top: 0; }
+.B .ev .d { font: 500 .68rem "JetBrains Mono", monospace; color: var(--b-muted); }
+.B .ev .k { font-size: .6rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
+.B .ev .k.o { color: var(--b-brand); }
+
+/* ---------- Direction C: Chamber ---------- */
+.C { background: var(--c-bg); color: var(--c-ink); font-family: "Figtree", system-ui, sans-serif; }
+.C .bar { padding: 14px 16px 6px; display: flex; justify-content: space-between; align-items: center; }
+.C .bar b { font: 600 1.05rem "Newsreader", Georgia, serif; color: var(--c-brand); }
+.C .bar span { width: 28px; height: 28px; border-radius: 50%; background: var(--c-ok-bg); color: var(--c-brand); font-size: .7rem; font-weight: 700; display: grid; place-items: center; }
+.C .pad { padding: 6px 16px 18px; display: grid; gap: 14px; }
+.C .day { font: 500 1.5rem/1.15 "Newsreader", Georgia, serif; }
+.C .day small { display: block; font: 500 .8rem "Figtree", sans-serif; color: var(--c-muted); margin-top: 4px; }
+.C .attn { background: var(--c-red-bg); color: var(--c-red); border-radius: 12px; padding: 10px 12px; font-size: .8rem; font-weight: 600; }
+.C .card { background: var(--c-panel); border-radius: 14px; padding: 14px; display: grid; gap: 6px; box-shadow: 0 1px 2px rgba(20, 40, 30, .06); }
+.C .card .when { display: flex; justify-content: space-between; font-size: .74rem; color: var(--c-muted); font-weight: 600; }
+.C .card .when b { color: var(--c-brass); }
+.C .t { font: 600 1.02rem/1.25 "Newsreader", Georgia, serif; }
+.C .m { font-size: .75rem; color: var(--c-muted); }
+.C .pill { justify-self: start; font-size: .66rem; font-weight: 700; padding: 3px 8px; border-radius: 99px; background: var(--c-brass-bg); color: var(--c-brass); }
+.C .cal { background: var(--c-panel); padding: 12px; display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; font-size: .7rem; text-align: center; }
+.C .cal .h { color: var(--c-muted); font-weight: 700; }
+.C .cal .d { aspect-ratio: 1; max-width: 100%; display: grid; place-items: center; border-radius: 50%; font-variant-numeric: tabular-nums; position: relative; }
+.C .cal .d.b::after { content: ""; position: absolute; bottom: 3px; width: 4px; height: 4px; border-radius: 50%; background: var(--c-brand); }
+.C .cal .d.u::after { background: var(--c-red); }
+.C .cal .d.now { background: var(--c-brand); color: var(--c-panel); font-weight: 700; }
+.C .tl { background: var(--c-panel); padding: 14px 16px; display: grid; gap: 12px; font-size: .78rem; }
+.C .ev { display: grid; grid-template-columns: 12px 1fr; gap: 10px; }
+.C .ev i { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--c-brand); margin-top: 4px; }
+.C .ev.o i { background: var(--c-brass); border-color: var(--c-brass); }
+.C .ev b { font-family: "Newsreader", serif; font-size: .92rem; font-weight: 600; }
+.C .ev span { color: var(--c-muted); display: block; }
+
+.choose { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 20px; display: grid; gap: 10px; }
+.choose ol { margin: 0; padding-left: 1.2rem; display: grid; gap: 6px; color: var(--muted); }
+.choose ol b { color: var(--fg); }
+a { color: var(--accent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+</style>
+
+<div class="wrap">
+  <header class="read">
+    <p class="eyebrow">CourtPilot · UI redesign · Phase 1</p>
+    <h1>What gets in a lawyer's way, and three ways forward</h1>
+    <p class="lede">An audit of every current screen on a phone (375 px) and a laptop (1280 px), ranked by how much each problem
+      costs a lawyer on a court day. Then three visual directions to choose from. Nothing in the app has been changed yet.</p>
+    <div class="meta"><span><b>Screens reviewed:</b> login, Home, All cases, case page, Add case (6 tabs), search results, Settings, My courts</span>
+      <span><b>Data:</b> the demo account (Adv. Priya Sharma, 8 cases)</span><span><b>Date:</b> 5 Oct 2026</span></div>
+  </header>
+
+  <section class="read" aria-labelledby="audit">
+    <h2 id="audit">The 15 problems, most costly first</h2>
+    <ol class="issues">
+      <li class="issue"><span class="n">01</span><h3>Missed hearings sit at the bottom of Home <span class="sev high">High</span></h3>
+        <p class="where">Home</p>
+        <p>Two urgent cases whose hearings passed on 2 and 3 Oct with no next date listed appear last on Home, under "Waiting for next date", below every hearing up to 20 Nov. The top of the page says "1 today, 0 tomorrow" and looks calm.</p>
+        <p class="fix"><b>Fix:</b> a "Needs attention" strip at the top of Today: hearing passed without a new date, judge on leave, new order not yet opened.</p></li>
+      <li class="issue"><span class="n">02</span><h3>What a lawyer needs in the corridor isn't on Home <span class="sev high">High</span></h3>
+        <p class="where">Home</p>
+        <p>Item number, court room, judge, cause-list status and the VC link now exist, but only inside each case page. In court you have to open every case to find your item.</p>
+        <p class="fix"><b>Fix:</b> Today rows lead with the item number and court room, then the case title, stage and a Join VC button.</p></li>
+      <li class="issue"><span class="n">03</span><h3>No way to see the week or month ahead <span class="sev high">High</span></h3>
+        <p class="where">Missing screen</p>
+        <p>Home counts "this week" but there is no calendar, so planning leave, clashes between two courts on one day, or a client's next date means scrolling a list.</p>
+        <p class="fix"><b>Fix:</b> a Calendar tab: month grid with hearing counts per day, tap a day for its list, clashes marked. Built from data we already have.</p></li>
+      <li class="issue"><span class="n">04</span><h3>Two cases per phone screen <span class="sev high">High</span></h3>
+        <p class="where">Home, All cases</p>
+        <p>Each case card is about 250 px tall and repeats the date twice (the tile and "Fri, 02 Oct 2026" beside it). A lawyer with 40 cases scrolls 20 screens.</p>
+        <p class="fix"><b>Fix:</b> compact rows (about 84 px): date or item number once, title, one line of court and stage, status chip.</p></li>
+      <li class="issue"><span class="n">05</span><h3>Status colours don't mean one thing each <span class="sev high">High</span></h3>
+        <p class="where">Everywhere</p>
+        <p>The same red marks "Today", "Urgent" and errors; "High" is orange; "Pending" is green. There's no status for adjourned, no date listed, reserved or judge on leave, so the eye can't sort cases by state.</p>
+        <p class="fix"><b>Fix:</b> one badge set with a fixed meaning per colour: listed, adjourned, reserved, disposed, overdue, judge on leave; priority shown separately.</p></li>
+      <li class="issue"><span class="n">06</span><h3>The case page is four screens long, in the wrong order <span class="sev mid">Medium</span></h3>
+        <p class="where">Case page</p>
+        <p>3,350 px on a phone. Your own notes and the client's name are at the very bottom; orders and hearing history are two separate lists, so you can't see which order came out of which hearing.</p>
+        <p class="fix"><b>Fix:</b> one timeline of hearings and orders, notes pinned under the title, quick actions (open latest order, add note, share with client) in one row.</p></li>
+      <li class="issue"><span class="n">07</span><h3>"My cases" bulk import is hidden off-screen <span class="sev mid">Medium</span></h3>
+        <p class="where">Add case</p>
+        <p>Six tabs scroll sideways and only the first three and a half are visible. You asked for "pick my name, tick several cases, add at once", and that feature already exists under the sixth tab.</p>
+        <p class="fix"><b>Fix:</b> Add case opens on three big choices (Case number, Screenshot, All my cases); the rest sit under "Other ways".</p></li>
+      <li class="issue"><span class="n">08</span><h3>Two Add buttons, one covering the content <span class="sev mid">Medium</span></h3>
+        <p class="where">Home, All cases</p>
+        <p>A floating "+ Add case" sits on top of the bottom bar's "Add". It covers the last case card and the court line of the cards it passes over.</p>
+        <p class="fix"><b>Fix:</b> keep the Add tab; drop the floating button.</p></li>
+      <li class="issue"><span class="n">09</span><h3>Adding by case number starts with a wall of courts <span class="sev mid">Medium</span></h3>
+        <p class="where">Add case</p>
+        <p>The court list fills the first phone screen before the case-number field appears, and the case-type box reads "Loading case types…" as if it were a choice.</p>
+        <p class="fix"><b>Fix:</b> the last-used court pre-selected as one line with "Change"; case number first; a proper loading state.</p></li>
+      <li class="issue"><span class="n">10</span><h3>It looks like a template <span class="sev mid">Medium</span></h3>
+        <p class="where">Everywhere</p>
+        <p>System font, a navy bar, and every block drawn as the same 14 px rounded card with the same shadow. Nothing says "court" or "chambers", and with every block framed alike, nothing stands out.</p>
+        <p class="fix"><b>Fix:</b> pick one of the directions below and apply it through tokens.</p></li>
+      <li class="issue"><span class="n">11</span><h3>The header spends its space on the plan counter <span class="sev low">Low</span></h3>
+        <p class="where">Every page</p>
+        <p>"8/50 cases" sits in the header on every screen, while search, the thing you reach for in court, is two taps away.</p>
+        <p class="fix"><b>Fix:</b> search in the header; plan usage moves to Settings.</p></li>
+      <li class="issue"><span class="n">12</span><h3>Some text is too faint to read in sunlight <span class="sev mid">Medium</span></h3>
+        <p class="where">Case list, Settings</p>
+        <p>The faint grey used for "No date" and locked features measures about 3.0 : 1 on white, below the 4.5 : 1 that WCAG AA asks for small text. Hard to read on a phone outside a courtroom.</p>
+        <p class="fix"><b>Fix:</b> every text colour checked at AA in both light and dark themes.</p></li>
+      <li class="issue"><span class="n">13</span><h3>Two ways of saving on one page <span class="sev low">Low</span></h3>
+        <p class="where">Case page</p>
+        <p>Reminders save the moment you flip a switch; notes need a Save button at the bottom of their card. Field spacing in the notes form is uneven (Client name sits apart, Notes sits tight).</p>
+        <p class="fix"><b>Fix:</b> notes save on their own too, with a quiet "Saved" mark; one form rhythm across the app.</p></li>
+      <li class="issue"><span class="n">14</span><h3>Waiting looks like nothing is happening <span class="sev low">Low</span></h3>
+        <p class="where">Add case, search, case page</p>
+        <p>Searches that take 20 to 60 seconds, the order text being read, and case types loading all show plain text. There are no skeleton rows or progress for long eCourts lookups.</p>
+        <p class="fix"><b>Fix:</b> skeleton rows, a progress line with what's being checked ("Court 2 of 3"), and an empty state for each list.</p></li>
+      <li class="issue"><span class="n">15</span><h3>On a laptop it's a phone column in an empty page <span class="sev low">Low</span></h3>
+        <p class="where">Case page, Home at 1280 px</p>
+        <p>Content stays one narrow column with two thirds of the screen blank, so chamber work on a laptop gets the phone layout.</p>
+        <p class="fix"><b>Fix:</b> two columns on wide screens: timeline left, case facts, notes and actions right; Today beside the calendar.</p></li>
+    </ol>
+    <div class="callout">
+      <h3>Out of scope for the redesign, as the brief asks</h3>
+      <ul>
+        <li>Tasks, documents, filings, client accounts and staff roles: these need new data, so they're separate features.</li>
+        <li>The Calendar (problem 03) is the one new screen, at your request. It uses hearing dates we already store.</li>
+        <li>"Judge on leave" needs a small backend change (reading it from eCourts); the redesign reserves its badge.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section aria-labelledby="dirs">
+    <div class="read" style="display:grid;gap:8px">
+      <h2 id="dirs">Three directions</h2>
+      <p class="lede" style="margin:0">Each mock-up shows the same morning: Monday 5 Oct, one matter listed, one overdue, one court where the judge is on leave. All three work in light and dark; switch your device theme to see dark.</p>
+    </div>
+
+    <div class="dirs">
+      <!-- A -->
+      <article class="dir">
+        <header><span class="eyebrow">Direction A</span><h3 style="font:600 1.35rem 'Source Serif 4',serif">Court Paper</h3>
+          <p class="mood">Calm and formal, like a well-kept brief. White paper, ink-black serif titles, and court red-tape used only for what's late.</p></header>
+        <div class="spec"><dl>
+          <div><dt>Type</dt><dd><span class="sample" style="font-family:'Source Serif 4',serif;font-weight:600">Source Serif 4</span> titles, <span style="font-family:'IBM Plex Sans'">IBM Plex Sans</span> for everything else</dd></div>
+          <div><dt>Colour</dt><dd><div class="swatches"><i class="sw" style="background:var(--a-brand)"></i><i class="sw" style="background:var(--a-paper)"></i><i class="sw" style="background:var(--a-tape)"></i><i class="sw" style="background:var(--a-amber)"></i><i class="sw" style="background:var(--a-ok)"></i></div></dd></div>
+          <div><dt>Shape</dt><dd>6 px corners, no shadows, hairline rules divide sections like a docket sheet</dd></div>
+        </dl></div>
+        <div class="mocks">
+          <p class="mock-label">Today</p>
+          <div class="phone A" aria-label="Court Paper Today screen mock-up">
+            <div class="bar"><b>CourtPilot</b><span>Search</span></div>
+            <div class="pad">
+              <p class="day">Monday, 5 October<small>1 listed today · 3 this week</small></p>
+              <p class="attn"><b>2 need attention.</b> Hearings on 2 and 3 Oct passed with no next date.</p>
+              <p class="sec">Listed today</p>
+              <div class="row"><div class="item"><small>ITEM</small><b>14</b></div>
+                <div><p class="t">Sharma Textiles v. Kumar Logistics</p><p class="m">Court 3 · DJ (Comm)-03, West · Evidence</p>
+                  <div class="chips"><span class="chip listed">Listed</span><span class="chip urgent">Urgent</span></div></div></div>
+              <div class="row"><div class="item"><small>ITEM</small><b>—</b></div>
+                <div><p class="t">State v. Mohan Lal</p><p class="m">Court 802 · JMFC-11, West · Arguments</p>
+                  <div class="chips"><span class="chip leave">Judge on leave</span></div></div></div>
+            </div>
+          </div>
+          <p class="mock-label">Calendar</p>
+          <div class="mini A"><div class="cal">
+            <span class="h">M</span><span class="h">T</span><span class="h">W</span><span class="h">T</span><span class="h">F</span><span class="h">S</span><span class="h">S</span>
+            <span class="d now">5<i></i></span><span class="d">6</span><span class="d">7<i></i><i></i></span><span class="d">8</span><span class="d">9<i class="u"></i></span><span class="d">10</span><span class="d">11</span>
+            <span class="d">12<i></i></span><span class="d">13</span><span class="d">14<i></i></span><span class="d">15</span><span class="d">16<i></i><i></i><i></i></span><span class="d">17</span><span class="d">18</span>
+          </div></div>
+          <p class="mock-label">Case timeline</p>
+          <div class="mini A"><div class="tl">
+            <div class="ev"><span class="d">27 Oct 26</span><div class="b"><b>Next hearing</b><br>Arguments · Court 802</div></div>
+            <div class="ev order"><span class="d">14 Aug 26</span><div class="b"><b>Order</b><br>Accused absent; bailable warrants. <u>Open PDF</u></div></div>
+            <div class="ev"><span class="d">14 Aug 26</span><div class="b"><b>Hearing</b><br>Prosecution evidence</div></div>
+          </div></div>
+        </div>
+        <div class="notes"><p><b>Best at:</b> feeling authoritative and calm; reading orders.</p><p><b>Trade-off:</b> serif titles take a little more room, so lists are less dense than B.</p></div>
+      </article>
+
+      <!-- B -->
+      <article class="dir rec">
+        <header><span class="tag">Recommended</span><span class="eyebrow">Direction B</span><h3 style="font:800 1.3rem 'Public Sans',sans-serif">Docket</h3>
+          <p class="mood">Built like the court's own display board. The item number is the hero, everything is a tight, scannable row, and the amber of the board marks "now".</p></header>
+        <div class="spec"><dl>
+          <div><dt>Type</dt><dd><span class="sample" style="font-family:'Public Sans';font-weight:800">Public Sans</span> (made for government services) with <span style="font-family:'JetBrains Mono'">JetBrains Mono</span> for item numbers, dates and CNRs</dd></div>
+          <div><dt>Colour</dt><dd><div class="swatches"><i class="sw" style="background:var(--b-board)"></i><i class="sw" style="background:var(--b-board-ink)"></i><i class="sw" style="background:var(--b-panel)"></i><i class="sw" style="background:var(--b-red)"></i><i class="sw" style="background:var(--b-amber)"></i><i class="sw" style="background:var(--b-ok)"></i></div></dd></div>
+          <div><dt>Shape</dt><dd>4 px corners, no shadows, tables instead of cards, 8 px spacing grid</dd></div>
+        </dl></div>
+        <div class="mocks">
+          <p class="mock-label">Today</p>
+          <div class="phone B" aria-label="Docket Today screen mock-up">
+            <div class="bar"><b>COURTPILOT</b><span>MON 05 OCT</span></div>
+            <div class="pad">
+              <div class="top"><p class="day">Today</p><span class="cnt">1 LISTED · 3 THIS WEEK</span></div>
+              <p class="attn"><span>2 hearings passed, no next date</span><span>Review ›</span></p>
+              <div class="tbl">
+                <div class="tr"><div class="no"><small>ITEM</small>14</div><div><p class="t">Sharma Textiles v. Kumar Logistics</p><p class="m">Ct 3 · DJ (Comm)-03 · Evidence</p></div><span class="st listed">Listed</span></div>
+                <div class="tr"><div class="no"><small>ITEM</small>—</div><div><p class="t">State v. Mohan Lal</p><p class="m">Ct 802 · JMFC-11 · Arguments</p></div><span class="st leave">On leave</span></div>
+                <div class="tr"><div class="no"><small>ITEM</small>31</div><div><p class="t">Vikram Singh v. State</p><p class="m">Ct 4 · ASJ-04, South · Bail</p></div><span class="st urgent">Urgent</span></div>
+              </div>
+            </div>
+          </div>
+          <p class="mock-label">Calendar</p>
+          <div class="mini B"><div class="cal">
+            <span class="h">M</span><span class="h">T</span><span class="h">W</span><span class="h">T</span><span class="h">F</span><span class="h">S</span><span class="h">S</span>
+            <span class="d now">05<b>3</b></span><span class="d">06</span><span class="d busy">07<b>2</b></span><span class="d">08</span><span class="d busy u">09<b>1</b></span><span class="d">10</span><span class="d">11</span>
+            <span class="d busy">12<b>1</b></span><span class="d">13</span><span class="d busy">14<b>1</b></span><span class="d">15</span><span class="d busy">16<b>4</b></span><span class="d">17</span><span class="d">18</span>
+          </div></div>
+          <p class="mock-label">Case timeline</p>
+          <div class="mini B"><div class="tl">
+            <div class="ev"><span class="d">27-10-2026</span><span class="k">Next</span><span>Arguments · Ct 802</span></div>
+            <div class="ev"><span class="d">14-08-2026</span><span class="k o">Order</span><span>Bailable warrants issued · <u>PDF</u></span></div>
+            <div class="ev"><span class="d">14-08-2026</span><span class="k">Hearing</span><span>Prosecution evidence</span></div>
+            <div class="ev"><span class="d">05-06-2026</span><span class="k o">Order</span><span>Complainant heard via VC · <u>PDF</u></span></div>
+          </div></div>
+        </div>
+        <div class="notes"><p><b>Best at:</b> "where am I and when am I called" at a glance; 5 to 6 matters per phone screen; dates written the way eCourts writes them.</p>
+          <p><b>Trade-off:</b> the most utilitarian of the three; warmth comes from the board amber, not from type.</p></div>
+      </article>
+
+      <!-- C -->
+      <article class="dir">
+        <header><span class="eyebrow">Direction C</span><h3 style="font:600 1.35rem Newsreader,serif">Chamber</h3>
+          <p class="mood">Quiet and personal, like a senior's chamber: deep green, brass details, soft rounded surfaces and generous space.</p></header>
+        <div class="spec"><dl>
+          <div><dt>Type</dt><dd><span class="sample" style="font-family:Newsreader,serif;font-weight:600">Newsreader</span> titles with <span style="font-family:Figtree">Figtree</span> for the interface</dd></div>
+          <div><dt>Colour</dt><dd><div class="swatches"><i class="sw" style="background:var(--c-brand)"></i><i class="sw" style="background:var(--c-brass)"></i><i class="sw" style="background:var(--c-panel)"></i><i class="sw" style="background:var(--c-red)"></i><i class="sw" style="background:var(--c-bg)"></i></div></dd></div>
+          <div><dt>Shape</dt><dd>14 px corners, one soft shadow level, 16 px spacing grid</dd></div>
+        </dl></div>
+        <div class="mocks">
+          <p class="mock-label">Today</p>
+          <div class="phone C" aria-label="Chamber Today screen mock-up">
+            <div class="bar"><b>CourtPilot</b><span>PS</span></div>
+            <div class="pad">
+              <p class="day">Good morning, Priya<small>Monday 5 October · 1 matter listed</small></p>
+              <p class="attn">2 hearings passed without a new date</p>
+              <div class="card"><div class="when"><span>Item 14 · Court 3</span><b>Listed</b></div>
+                <p class="t">Sharma Textiles v. Kumar Logistics</p><p class="m">DJ (Comm)-03, West · Evidence</p></div>
+              <div class="card"><div class="when"><span>Court 802</span><b>Judge on leave</b></div>
+                <p class="t">State v. Mohan Lal</p><p class="m">JMFC-11, West · Arguments</p></div>
+            </div>
+          </div>
+          <p class="mock-label">Calendar</p>
+          <div class="mini C"><div class="cal">
+            <span class="h">M</span><span class="h">T</span><span class="h">W</span><span class="h">T</span><span class="h">F</span><span class="h">S</span><span class="h">S</span>
+            <span class="d now">5</span><span class="d">6</span><span class="d b">7</span><span class="d">8</span><span class="d b u">9</span><span class="d">10</span><span class="d">11</span>
+            <span class="d b">12</span><span class="d">13</span><span class="d b">14</span><span class="d">15</span><span class="d b">16</span><span class="d">17</span><span class="d">18</span>
+          </div></div>
+          <p class="mock-label">Case timeline</p>
+          <div class="mini C"><div class="tl">
+            <div class="ev"><i></i><div><b>27 Oct · Next hearing</b><span>Arguments, Court 802</span></div></div>
+            <div class="ev o"><i></i><div><b>14 Aug · Order</b><span>Bailable warrants issued · Open PDF</span></div></div>
+            <div class="ev"><i></i><div><b>14 Aug · Hearing</b><span>Prosecution evidence</span></div></div>
+          </div></div>
+        </div>
+        <div class="notes"><p><b>Best at:</b> feeling premium and personal; least tiring for long use.</p><p><b>Trade-off:</b> lowest density (3 matters per screen); closest to today's card look.</p></div>
+      </article>
+    </div>
+  </section>
+
+  <section class="read choose" aria-labelledby="pick">
+    <h2 id="pick">Why Docket, and what happens next</h2>
+    <p>The audit's top problems are about speed in court: overdue matters hidden, item numbers buried, two cases per screen. Docket answers all three by design: item number first, rows instead of cards, and an attention strip that can't be missed. It stays calm because colour is reserved for state.</p>
+    <p>You can also mix: Docket's layout with Court Paper's serif for case titles is a reasonable middle.</p>
+    <ol>
+      <li><b>Reply A, B, C</b> (or a mix) in the chat.</li>
+      <li>I build the tokens and components on a new <b>ui-redesign</b> branch, with no changes to data or routes.</li>
+      <li>Then the screens one at a time, starting with Today and the new Calendar, with phone screenshots for each.</li>
+    </ol>
+  </section>
+</div>

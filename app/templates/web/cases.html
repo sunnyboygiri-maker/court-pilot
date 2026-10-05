@@ -32,7 +32,7 @@
 <div id="results">
   {% if items %}
     <p class="result-count">{{ items|length }} case{{ "s" if items|length != 1 }}{% if filtered %} found{% endif %}, soonest hearing first</p>
-    {% for c in items %}{% include "web/_hearing_card.html" %}{% endfor %}
+    <ul class="docket">{% for c in items %}{% include "web/_hearing_card.html" %}{% endfor %}</ul>
   {% elif filtered %}
     <section class="card empty">
       <div class="art">{{ icon("search") }}</div>

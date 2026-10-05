@@ -1,27 +1,29 @@
-{#- One case as a tappable card. Expects `c` from web.router.card() -#}
+{#- One matter as a docket row (inside <ul class="docket">). Expects `c` from web.router.card() -#}
 {% set d = c.date %}
-{% set tone = "today" if c.days == 0 else ("soon" if c.days is not none and 0 < c.days <= 3 else "") %}
-<a class="hcard" href="/cases/{{ c.id }}/view">
-  {% if d and not c.disposed %}
-    <div class="datebox {{ tone }}" aria-hidden="true">
-      <span class="dow">{{ d.strftime("%a") }}</span>
-      <span class="dd">{{ d.strftime("%d") }}</span>
-      <span class="mon">{{ d.strftime("%b") }}</span>
-    </div>
+<li><a class="drow" href="/cases/{{ c.id }}/view">
+  {% if c.listing and c.listing.serial and c.days is not none and 0 <= c.days <= 1 %}
+    <span class="slot item"><small>Item</small><b>{{ c.listing.serial }}</b></span>
+  {% elif d and not c.disposed %}
+    <span class="slot {{ 'overdue' if c.tone == 'overdue' }}"><small>{{ d.strftime("%b") }}</small><b>{{ d.strftime("%d") }}</b></span>
   {% else %}
-    <div class="datebox none" aria-hidden="true">{{ "Disposed" if c.disposed else "No date" }}</div>
+    <span class="slot none"><small>{{ "Closed" if c.disposed else "Date" }}</small><b>—</b></span>
   {% endif %}
-  <div>
-    <div class="when {{ tone }}">
-      <span>{% if d and not c.disposed %}{{ fmt_date(d) }} · {% endif %}{{ c.when }}</span>
+  <span class="body">
+    <span class="title">{{ c.title }}</span>
+    <span class="meta">
+      {%- if c.case.court_name %}<span>{{ c.case.court_name }}</span>{% endif -%}
+      {%- if c.case.stage %}<span>{{ c.case.stage }}</span>{% endif -%}
+    </span>
+    {% if c.tracked.label or c.tracked.client_name or c.tracked.priority %}
+    <span class="tags">
       {% if c.tracked.priority == 2 %}<span class="badge urgent">Urgent</span>{% elif c.tracked.priority == 1 %}<span class="badge high">High</span>{% endif %}
-    </div>
-    <div class="title">{{ c.title }}</div>
-    <div class="meta">
-      {% if c.case.court_name %}<span>{{ c.case.court_name }}</span>{% endif %}
-      {% if c.case.stage %}<span>{{ c.case.stage }}</span>{% endif %}
-      {% if c.tracked.client_name %}<span>Client: {{ c.tracked.client_name }}</span>{% endif %}
-    </div>
-    {% if c.tracked.label %}<span class="label">{{ c.tracked.label }}</span>{% endif %}
-  </div>
-</a>
+      {% if c.tracked.client_name %}<span class="label">{{ c.tracked.client_name }}</span>{% endif %}
+      {% if c.tracked.label %}<span class="label">{{ c.tracked.label }}</span>{% endif %}
+    </span>
+    {% endif %}
+  </span>
+  <span class="side">
+    <span class="when {{ c.tone }}">{{ c.short_when }}</span>
+    {% if c.status_label %}<span class="badge {{ c.status_class }}">{{ c.status_label }}</span>{% endif %}
+  </span>
+</a></li>

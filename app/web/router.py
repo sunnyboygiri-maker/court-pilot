@@ -86,29 +86,33 @@ async def page_context(db: AsyncSession, user: User, nav: str) -> dict:
     return {
         "user": user,
         "nav": nav,
+        "board_date": today_ist().strftime("%a %d %b").upper(),
         "cases_used": await service.count_tracked(db, user.id),
         "case_limit": service.case_limit(user),
         "plan_name": PLAN_NAMES[service.effective_plan(user)],
     }
 
 
-def card(tracked: TrackedCase, today) -> dict:
-    """Everything a case card or row shows."""
+def card(tracked: TrackedCase, today, listing: Optional[CauseListing] = None) -> dict:
+    """Everything a case row shows: one status, one "when", and the cause-list item if it's out."""
     c = tracked.court_case
     d = c.next_hearing_date
     days = (d - today).days if d else None
-    if c.status == CaseStatus.DISPOSED:
-        when = "Disposed"
+    disposed = c.status == CaseStatus.DISPOSED
+    if disposed:
+        when, short, tone, status = "Disposed", "", "", ("disposed", "Disposed")
     elif days is None:
-        when = "Date not listed yet"
+        when, short, tone, status = "Date not listed yet", "", "", ("nodate", "No date")
     elif days == 0:
-        when = "Today"
+        when, short, tone, status = "Today", "TODAY", "today", ("", "")
     elif days == 1:
-        when = "Tomorrow"
+        when, short, tone, status = "Tomorrow", "TOMORROW", "soon", ("", "")
     elif days > 1:
-        when = f"In {days} days"
+        when, short, tone, status = f"In {days} days", f"IN {days} D", "soon" if days <= 3 else "", ("", "")
     else:
-        when = "Waiting for next date"
+        when, short, tone, status = "Waiting for next date", f"{-days} D AGO", "overdue", ("overdue", "Overdue")
+    if listing is not None and not disposed and days is not None and 0 <= days <= 1:
+        status = ("listed", "Listed") if listing.serial else ("nodate", "Not on list")
     return {
         "id": c.id,
         "tracked": tracked,
@@ -117,12 +121,26 @@ def card(tracked: TrackedCase, today) -> dict:
         "date": d,
         "days": days,
         "when": when,
-        "disposed": c.status == CaseStatus.DISPOSED,
+        "short_when": short,
+        "tone": tone,
+        "status_class": status[0],
+        "status_label": status[1],
+        "listing": listing,
+        "disposed": disposed,
         "priority": PRIORITIES.get(tracked.priority or 0, "Normal"),
     }
 
 
-def group_hearings(rows: list[TrackedCase], today) -> list[dict]:
+async def listings_for(db: AsyncSession, rows: list[TrackedCase]) -> dict[int, CauseListing]:
+    """Cause-list entries for each case's next hearing (published for today and tomorrow only)."""
+    wanted = {t.court_case.id: t.court_case.next_hearing_date for t in rows if t.court_case.next_hearing_date}
+    if not wanted:
+        return {}
+    found = (await db.scalars(select(CauseListing).where(CauseListing.case_id.in_(list(wanted))))).all()
+    return {r.case_id: r for r in found if wanted.get(r.case_id) == r.listing_date}
+
+
+def group_hearings(rows: list[TrackedCase], today, listings: Optional[dict] = None) -> list[dict]:
     groups = {
         "today": {"key": "today", "title": "Today", "items": []},
         "tomorrow": {"key": "tomorrow", "title": "Tomorrow", "items": []},
@@ -132,8 +150,9 @@ def group_hearings(rows: list[TrackedCase], today) -> list[dict]:
                   "note": "The last listed date has passed. We'll update these as soon as eCourts does."},
         "nodate": {"key": "nodate", "title": "No date listed", "items": []},
     }
+    listings = listings or {}
     for t in rows:
-        c = card(t, today)
+        c = card(t, today, listings.get(t.court_case.id))
         if c["disposed"]:
             continue
         days = c["days"]
@@ -413,18 +432,73 @@ async def logout(request: Request):
 async def dashboard(request: Request, user: User = Depends(get_web_user), db: AsyncSession = Depends(get_db)):
     today = today_ist()
     rows = await service.list_tracked(db, user.id, limit=500)
-    groups = group_hearings(rows, today)
+    groups = group_hearings(rows, today, await listings_for(db, rows))
+    by_key = {g["key"]: g for g in groups}
     ctx = await page_context(db, user, "home")
     ctx.update(
-        groups=groups,
+        groups=[by_key[k] for k in ("today", "tomorrow", "week", "later")],
+        # Late or dateless matters go to the top, not the bottom
+        attention=by_key["stale"]["items"] + by_key["nodate"]["items"],
+        stale_count=len(by_key["stale"]["items"]),
         has_cases=bool(rows),
         all_disposed=bool(rows) and not any(g["items"] for g in groups),
         counts={g["key"]: len(g["items"]) for g in groups},
         today=today,
         telegram_linked=bool(user.telegram_chat_id),
-        show_fab=True,
     )
     return render(request, "web/dashboard.html", ctx)
+
+
+# --- Calendar ---
+
+@router.get("/calendar")
+async def calendar_page(request: Request, month: str = "", day: str = "", user: User = Depends(get_web_user),
+                        db: AsyncSession = Depends(get_db)):
+    """A month of hearings: counts per day, a day's list beside (or under) the grid."""
+    import calendar as cal
+    from datetime import date as date_cls
+
+    today = today_ist()
+    try:
+        first = date_cls.fromisoformat(f"{month}-01") if month else today.replace(day=1)
+    except ValueError:
+        first = today.replace(day=1)
+    picked = parse_date(day) if day else None
+    if picked is None or (picked.year, picked.month) != (first.year, first.month):
+        picked = today if (today.year, today.month) == (first.year, first.month) else None
+    rows = await service.list_tracked(db, user.id, limit=500)
+    listings = await listings_for(db, rows)
+    by_day: dict = {}
+    for t in rows:
+        d = t.court_case.next_hearing_date
+        if d and t.court_case.status != CaseStatus.DISPOSED:
+            by_day.setdefault(d, []).append(card(t, today, listings.get(t.court_case.id)))
+    weeks = []
+    for week in cal.Calendar(firstweekday=0).monthdatescalendar(first.year, first.month):
+        cells = []
+        for d in week:
+            items = by_day.get(d, [])
+            courts = {i["case"].court_name for i in items if i["case"].court_name}
+            cells.append({
+                "date": d, "in_month": d.month == first.month, "count": len(items),
+                "urgent": any((i["tracked"].priority or 0) >= 2 for i in items),
+                "clash": len(courts) > 1,  # two courts on one day
+                "weekend": d.weekday() >= 5,
+            })
+        weeks.append(cells)
+    prev_m = (first - timedelta(days=1)).replace(day=1)
+    next_m = (first + timedelta(days=32)).replace(day=1)
+    month_items = sorted((i for d, items in by_day.items() if (d.year, d.month) == (first.year, first.month) for i in items),
+                         key=lambda i: i["date"])
+    ctx = await page_context(db, user, "calendar")
+    ctx.update(
+        first=first, weeks=weeks, today=today, picked=picked,
+        day_items=sorted(by_day.get(picked, []), key=lambda i: (i["listing"].serial if i["listing"] and i["listing"].serial else 999)) if picked else [],
+        month_items=month_items,
+        prev_month=prev_m.strftime("%Y-%m"), next_month=next_m.strftime("%Y-%m"),
+        this_month=today.strftime("%Y-%m"),
+    )
+    return render(request, "web/calendar.html", ctx)
 
 
 # --- All cases ---
@@ -444,12 +518,12 @@ async def cases_list(
         db, user.id, status=status_filter, priority=priority_filter, search=q.strip()[:100] or None, limit=500
     )
     today = today_ist()
+    listings = await listings_for(db, rows)
     ctx = await page_context(db, user, "cases")
     ctx.update(
-        items=[card(t, today) for t in rows],
+        items=[card(t, today, listings.get(t.court_case.id)) for t in rows],
         q=q, status=status, priority=priority,
         filtered=bool(q or status or priority),
-        show_fab=True,
     )
     return render(request, "web/cases.html", ctx)
 
