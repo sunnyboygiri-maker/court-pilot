@@ -12,6 +12,8 @@
       <div class="hit-top">
         {% if job.kind == "name" %}<span class="badge {{ 'ok' if h.score >= 0.88 else ('high' if h.score >= 0.7 else '') }}">{{ label(h.score) }}</span>{% endif %}
         {% if h.case_number %}<b>{{ h.case_number }}</b>{% endif %}
+        {% set st = (h.details or {}).get("case_status") %}
+        {% if st %}<span class="badge {{ 'disposed' if st == 'Disposed' else 'ok' }}">{{ st }}</span>{% endif %}
         {% if h.fir %}<span class="hint" style="margin:0">FIR {{ h.fir }}</span>{% endif %}
       </div>
       <div class="hit-parties">{{ h.petitioner or "Party not listed" }}{% if h.respondent %} <span class="vs">vs</span> {{ h.respondent }}{% endif %}</div>
@@ -73,6 +75,21 @@
     {% endif %}
   {% endif %}
 
+  {% if job.kind == "advocate" and status_counts.all %}
+    <section class="found-summary" aria-label="Cases found">
+      <p><b>{{ status_counts.all }}</b> case{{ "s" if status_counts.all != 1 }} found{% if running %} so far{% endif %}:
+        {{ status_counts.pending }} pending{% if disposed_searched %}, {{ status_counts.disposed }} disposed{% endif %}</p>
+      <div class="chips" role="group" aria-label="Show">
+        {% for key, name in filters.items() %}
+          {% if key != "disposed" or disposed_searched %}
+          <a class="chip" aria-pressed="{{ 'true' if show == key else 'false' }}" href="/find/{{ job.id }}?show={{ key }}">{{ name }} <span class="chip-n">{{ status_counts[key] }}</span></a>
+          {% endif %}
+        {% endfor %}
+      </div>
+      {% if not disposed_searched %}<p class="hint">Only pending cases were searched. <a href="/cases/new?by=advocate">Search again with disposed cases</a></p>{% endif %}
+    </section>
+  {% endif %}
+
   {% if hits %}
     {% if not running and hits|length > 1 %}
       <form id="bulk" method="post" action="/find/{{ job.id }}/add" class="bulk-bar">
@@ -92,6 +109,8 @@
     {% else %}
       <ul class="hits" style="margin-top:12px">{% for h in hits %}{{ hit_row(h, not running) }}{% endfor %}</ul>
     {% endif %}
+  {% elif job.kind == "advocate" and status_counts.all and not running %}
+    <p class="empty-day">No {{ filters[show]|lower }} cases in these results.</p>
   {% elif not running and job.status != "failed" %}
     <section class="card empty">
       <div class="art">{{ icon("search") }}</div>

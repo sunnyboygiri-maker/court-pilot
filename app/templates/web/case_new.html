@@ -195,8 +195,8 @@
     <fieldset class="field">
       <legend>Which cases</legend>
       <div class="seg seg-2">
-        <label><input type="radio" name="status" value="Pending" {% if form.status != "Both" %}checked{% endif %}><span>Pending only</span></label>
-        <label><input type="radio" name="status" value="Both" {% if form.status == "Both" %}checked{% endif %}><span>Pending + disposed</span></label>
+        <label><input type="radio" name="status" value="Pending" {% if form.status == "Pending" %}checked{% endif %}><span>Pending only</span></label>
+        <label><input type="radio" name="status" value="Both" {% if form.status != "Pending" %}checked{% endif %}><span>Pending + disposed</span></label>
       </div>
     </fieldset>
     {{ court_picker(True) }}

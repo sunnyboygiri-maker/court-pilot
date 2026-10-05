@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     WEB_SESSION_DAYS: int = 30
     # No payment gateway yet: self-service plan changes stay off in production
     ALLOW_PLAN_SELF_UPGRADE: bool = False
+    # Phone numbers (comma separated) whose accounts have no case limit: the owner's
+    # and testers' accounts. Set on the server only, e.g. UNLIMITED_PHONES=+919800000000
+    UNLIMITED_PHONES: str = ""
 
     # Database
     DATABASE_URL: str = "postgresql://courtpilot:courtpilot@localhost:5432/courtpilot"

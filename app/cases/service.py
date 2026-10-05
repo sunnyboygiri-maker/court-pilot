@@ -66,7 +66,19 @@ def effective_plan(user: User) -> PlanTier:
     return user.plan
 
 
+UNLIMITED_CASES = 100_000
+
+
+def is_unlimited(user: User) -> bool:
+    """Owner/tester accounts listed in UNLIMITED_PHONES (compared on the last 10 digits)."""
+    mine = "".join(ch for ch in (user.phone or "") if ch.isdigit())[-10:]
+    listed = {"".join(ch for ch in p if ch.isdigit())[-10:] for p in settings.UNLIMITED_PHONES.split(",") if p.strip()}
+    return bool(mine) and mine in listed
+
+
 def case_limit(user: User) -> int:
+    if is_unlimited(user):
+        return UNLIMITED_CASES
     return PLAN_LIMITS[effective_plan(user)]["max_cases"]
 
 

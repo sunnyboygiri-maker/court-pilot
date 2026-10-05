@@ -88,7 +88,7 @@ async def page_context(db: AsyncSession, user: User, nav: str) -> dict:
         "nav": nav,
         "cases_used": await service.count_tracked(db, user.id),
         "case_limit": service.case_limit(user),
-        "plan_name": PLAN_NAMES[service.effective_plan(user)],
+        "plan_name": "Unlimited" if service.is_unlimited(user) else PLAN_NAMES[service.effective_plan(user)],
     }
 
 

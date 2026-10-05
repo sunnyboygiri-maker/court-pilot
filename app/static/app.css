@@ -528,3 +528,9 @@ form:has(.adv-by input[value=bar]:checked) .adv-name { display: none; }
 .shot-tips b { color: var(--text); }
 .shot-tips ul { margin: 6px 0 8px; padding-left: 20px; }
 .read-summary { margin-top: 12px; }
+
+/* Advocate search: how many found, and All / Pending / Disposed */
+.found-summary { margin: 12px 0; display: grid; gap: 8px; }
+.found-summary p b { font-size: 1.15rem; }
+.found-summary .chips { margin-top: 0; }
+.chip-n { margin-left: 6px; font-size: .78rem; font-weight: 700; opacity: .8; }
