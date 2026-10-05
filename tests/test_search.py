@@ -131,7 +131,9 @@ class FakeEngine:
         return [Hit("DLWE010007072019", "CC/707/2019", "CC", 2019, "STATE", "ACCUSED", fir=f"{fir_no}/{year}")]
 
     async def advocate(self, court, *, name="", bar_state="", bar_code="", bar_year="", status="Pending", est=None):
-        self.calls.append(("advocate", name or bar_code))
+        self.calls.append(("advocate", name or bar_code, status))
+        if status == "Disposed":
+            return [Hit(f"DLWE0100{i:04d}2019", f"CS/{i}/2019", "CS", 2019, f"OLD CLIENT {i}", "OTHER") for i in range(1, 4)]
         return [Hit(f"DLWE0100{i:04d}2023", f"CS/{i}/2023", "CS", 2023, f"CLIENT {i}", "OTHER") for i in range(1, 8)]
 
     async def states(self):
@@ -358,3 +360,35 @@ async def test_cannot_see_someone_elses_search(web, db, make_user, engine):
     await db.commit()
     r = await web.get(f"/find/{job.id}")
     assert r.status_code == 404
+
+
+
+async def test_advocate_search_counts_and_filters_by_status(web, db, user, session_factory, sync_redis, engine):
+    job = await run(db, user, session_factory, sync_redis, engine, "advocate",
+                    {"courts": [DHORAJI], "bar_state": "D", "bar_code": "1234", "bar_year": "2015", "status": "Both"})
+    # Pending and disposed are asked for separately, so each result knows its status
+    assert {c[2] for c in engine.calls if c[0] == "advocate"} == {"Pending", "Disposed"}
+    page = (await web.get(f"/find/{job.id}")).text
+    assert "<b>10</b> cases found" in page and "7 pending, 3 disposed" in page
+    assert f"/find/{job.id}?show=pending" in page and f"/find/{job.id}?show=disposed" in page
+    pending = (await web.get(f"/find/{job.id}?show=pending")).text
+    assert "CS/1/2023" in pending and "CS/1/2019" not in pending
+    disposed = (await web.get(f"/find/{job.id}?show=disposed")).text
+    assert "CS/1/2019" in disposed and "CS/1/2023" not in disposed
+    assert (await web.get(f"/find/{job.id}?show=nonsense")).status_code == 200
+
+
+async def test_unlimited_account_has_no_case_limit(db, user, session_factory, sync_redis, engine, monkeypatch):
+    from app.cases import service
+    from config.settings import settings
+
+    monkeypatch.setattr(settings, "UNLIMITED_PHONES", "8383078983, +91 99999 00000")
+    user.phone = "+918383078983"
+    await db.commit()
+    assert service.case_limit(user) == service.UNLIMITED_CASES
+    job = await run(db, user, session_factory, sync_redis, engine, "advocate",
+                    {"courts": [DHORAJI], "advocate_name": "SIROYA", "status": "Pending"})
+    result = await add_hits(db, user, list((await db.scalars(select(SearchHit).where(SearchHit.job_id == job.id))).all()))
+    assert len(result.added) == 7 and result.over_limit == 0  # a free account would stop at 5
+    user.phone = "+919876543210"
+    assert service.case_limit(user) == 5

@@ -686,3 +686,9 @@ form:has(.adv-by input[value=bar]:checked) .adv-name { display: none; }
 /* Skeleton rows while something loads */
 .skeleton { display: block; height: 14px; border-radius: var(--radius-xs); background: linear-gradient(90deg, var(--surface-2), var(--line), var(--surface-2)); background-size: 200% 100%; animation: shimmer 1.4s linear infinite; }
 @keyframes shimmer { to { background-position: -200% 0; } }
+
+/* Advocate search: how many found, and All / Pending / Disposed */
+.found-summary { margin: var(--s-3) 0; display: grid; gap: var(--s-2); }
+.found-summary p b { font: 700 var(--fs-lg) var(--mono); }
+.found-summary .chips { margin-top: 0; }
+.chip-n { margin-left: 6px; font: 700 var(--fs-xs) var(--mono); opacity: .8; }

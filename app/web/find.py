@@ -382,8 +382,11 @@ async def _job_for(db: AsyncSession, user: User, job_id: int) -> Optional[Search
     return job if job is not None and job.user_id == user.id else None
 
 
+ADVOCATE_FILTERS = {"all": "All", "pending": "Pending", "disposed": "Disposed"}
+
+
 @router.get("/find/{job_id}")
-async def results_page(request: Request, job_id: int, user: User = Depends(get_web_user),
+async def results_page(request: Request, job_id: int, show: str = "all", user: User = Depends(get_web_user),
                        db: AsyncSession = Depends(get_db)):
     from app.web.router import page_context
 
@@ -409,9 +412,20 @@ async def results_page(request: Request, job_id: int, user: User = Depends(get_w
         .join(TrackedCase, TrackedCase.case_id == CourtCase.id)
         .where(SearchHit.job_id == job.id, TrackedCase.user_id == user.id)
     )).all())
+    # Advocate searches: count by status and filter with All / Pending / Disposed
+    def case_status(h) -> str:
+        return ((h.details or {}).get("case_status") or "").lower()
+
+    status_counts = {"all": len(hits), "pending": sum(case_status(h) == "pending" for h in hits),
+                     "disposed": sum(case_status(h) == "disposed" for h in hits)}
+    show = show if show in ADVOCATE_FILTERS else "all"
+    if job.kind == "advocate" and show != "all":
+        hits = [h for h in hits if case_status(h) == show]
     ctx = await page_context(db, user, "add")
     running = job.status in ("queued", "running")
     ctx.update(
+        show=show, status_counts=status_counts, filters=ADVOCATE_FILTERS,
+        disposed_searched=job.params.get("status", "Pending") != "Pending",
         job=job, running=running, hits=hits, tracked=tracked,
         title=jobs.describe(job),
         courts_label=("Read from your screenshot, then looked up on eCourts" if job.kind == "screenshot"

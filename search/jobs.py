@@ -95,9 +95,12 @@ def plan_queries(kind: str, params: dict) -> list[dict]:
     if kind == "screenshot":
         return [{"op": "image", "key": k} for k in params.get("images", [])]
     if kind == "advocate":
+        # eCourts' results don't say which cases are pending: ask for pending and
+        # disposed separately so every result carries its status
+        statuses = ["Pending"] if params.get("status", "Pending") == "Pending" else ["Pending", "Disposed"]
         return [{"op": "advocate", "court": c, "est": e, "name": params.get("advocate_name", ""),
                  "bar_state": params.get("bar_state", ""), "bar_code": params.get("bar_code", ""),
-                 "bar_year": params.get("bar_year", ""), "status": params.get("status", "Pending")} for c, e in sections]
+                 "bar_year": params.get("bar_year", ""), "status": st} for st in statuses for c, e in sections]
     raise PlanError("Unknown search")
 
 
@@ -186,7 +189,8 @@ async def _save(db: AsyncSession, job: SearchJob, court: dict, hits: list[Hit], 
                          "case_number": h.case_number or None, "petitioner": h.petitioner or None,
                          "respondent": h.respondent or None, "fir": h.fir or None,
                          "court_name": h.court_name or None, "score": round(score, 3), "source": source,
-                         "details": h.extra.get("details")})
+                         "details": h.extra.get("details") or (
+                             {"case_status": h.extra["case_status"]} if h.extra.get("case_status") else None)})
     if keep:
         stmt = pg_insert(SearchHit).values(list({r["cnr_number"]: r for r in keep}.values()))
         await db.execute(stmt.on_conflict_do_update(
@@ -248,6 +252,9 @@ async def run_job(job_id: int, session_factory: Callable, redis, engine: Optiona
                 if hits is None:
                     job.failed += 1
                 else:
+                    if q["op"] == "advocate":
+                        for h in hits:
+                            h.extra["case_status"] = q["status"]  # "Pending" or "Disposed"
                     await _save(db, job, q["court"], hits)
                 job.done += 1
                 await db.commit()
